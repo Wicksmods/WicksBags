@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.7.0 - 2026-05-08
+## 0.7.0 - 2026-05-08
 
 First public release. Bank panel, secure click for combat use, ItemRack-as-Equipment subclass, layout polish.
 
@@ -19,7 +19,7 @@ First public release. Bank panel, secure click for combat use, ItemRack-as-Equip
 - Keyring contents (`-2` container) included in the bag scan, so quest keys and dungeon keys show under the **Key** category.
 - **Known limitation**: panel position and size don't currently round-trip across `/reload` on TBC Anniversary 2.5.5. Saved-variable serializer behaves differently than Classic/Retail for new keys; tracking for a future release. Position survives within a session (open/close), just resets on `/reload` or login.
 
-## v0.6.0 - 2026-05-07
+## 0.6.0 - 2026-05-07
 
 Title-bar polish and a bottom bar that owns the gold + PvP currencies.
 
@@ -30,7 +30,7 @@ Title-bar polish and a bottom bar that owns the gold + PvP currencies.
 - **Bag bar now ON by default** since it carries the gold display.
 - Hover any bag icon → tooltip with the bag's contents shown via Blizzard's `SetInventoryItem`. Hover any currency tile → its tooltip.
 
-## v0.5.0 - 2026-05-07
+## 0.5.0 - 2026-05-07
 
 Sorting, filtering, new-items-first, bag bar.
 
@@ -42,7 +42,7 @@ Sorting, filtering, new-items-first, bag bar.
 - Drag-resize feel improved: panel height locks during active drag instead of snapping with every reflow, and gains a 14px breathing buffer below the last row when not dragging.
 - Common (white) and Poor (grey) quality borders dropped to ~50% alpha so Uncommon/Rare/Epic/Legendary borders pop.
 
-## v0.4.0 - 2026-05-07
+## 0.4.0 - 2026-05-07
 
 Resizable window, two-level masonry, parent-class containers, uniform group chrome.
 
@@ -53,7 +53,7 @@ Resizable window, two-level masonry, parent-class containers, uniform group chro
 - **Resizable panel.** Drag the BOTTOMRIGHT L-bracket. Width persists across sessions; height auto-fits to the packed content. Live reflow during drag (throttled to ~20Hz).
 - **Auto-fit width logic removed** in favor of user-controlled width — the panel respects whatever you set it to.
 
-## v0.3.0 - 2026-05-07
+## 0.3.0 - 2026-05-07
 
 Granular auto-categories, custom-rules engine foundation, header polish.
 
@@ -64,7 +64,7 @@ Granular auto-categories, custom-rules engine foundation, header polish.
   - Both are case-insensitive on the name match. UI for managing these arrives in v0.4.
 - **Header reverted to full-size fonts** (title 13pt, gold 11pt, search 110px, close/cog 20px). `MIN_PANEL_W` raised to 400 to fit. With the granular categories there are usually enough blocks to fill the panel anyway.
 
-## v0.2.0 - 2026-05-07
+## 0.2.0 - 2026-05-07
 
 Item interaction, new-item highlights, options panel, masonry layout, visual polish.
 
@@ -76,7 +76,7 @@ Item interaction, new-item highlights, options panel, masonry layout, visual pol
 - **Free slots condensed**: empty bag slots collapse into a single "Free" tile at the end of the layout with a count overlay (e.g. `47` if you have 47 empty slots), so you see free space at a glance without 47 visually-noisy empty squares.
 - **Visual fixes**: removed a stray full-cover overlay that was dimming every item icon. Close-X glyph now renders correctly (Lua 5.1 escape syntax). Section dividers removed and inter-category spacing tightened.
 
-## v0.1.0 - 2026-05-07
+## 0.1.0 - 2026-05-07
 
 Initial scaffold. MVP feature set.
 
