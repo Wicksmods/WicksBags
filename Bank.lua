@@ -163,7 +163,14 @@ local function buildSlot(parent, index)
     b:HookScript("OnEnter", function(self)
         if not self._bag or not self._slot then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetBagItem(self._bag, self._slot)
+        -- Main bank container (-1) needs SetInventoryItem; SetBagItem(-1, slot)
+        -- does not populate the tooltip in TBC 2.5.x. Bank bags (5..11) are
+        -- normal containers and the standard path works for those.
+        if self._bag == BANK_CONTAINER and BankButtonIDToInvSlotID then
+            GameTooltip:SetInventoryItem("player", BankButtonIDToInvSlotID(self._slot))
+        else
+            GameTooltip:SetBagItem(self._bag, self._slot)
+        end
         GameTooltip:Show()
     end)
     b:HookScript("OnLeave", function() GameTooltip:Hide() end)
