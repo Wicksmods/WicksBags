@@ -1,0 +1,46 @@
+# Wick's Bags
+
+> Categorized bag panel for TBC Classic. Auto-categorize, search, gold display, custom rules, pluggable category sources.
+
+Part of the **[Wick suite](https://github.com/Wicksmods/WickSuite)**.
+
+## Features
+
+- **Single window** replacing the bag clutter view.
+- **Auto-categorize** by item type: Equipment, Consumable, Trade Goods, Quest, Recipe, Gem, Container, Projectile, Quiver, Key, Junk, Misc.
+- **Quality-color borders** so rares and epics stand out at a glance.
+- **Live search** across all bags.
+- **Gold display** in the header.
+- **Cooldown spirals** on items with active cooldowns (potions, trinkets).
+- **Use-on-click** via secure action button (left-click an item to use it).
+- **Pluggable category sources** so an external addon can supply category data (TSM groups in v0.2, outfit addon in v0.3, etc.).
+- **Wick chrome.** Void background, fel-green L-bracket corners, two-tone "Wick's" title, slim 28px header.
+
+## Install
+
+- **Manual:** download the latest ZIP from [Releases](https://github.com/Wicksmods/WicksBags/releases) and extract the `WicksBags` folder into `World of Warcraft\_classic_\Interface\AddOns\`.
+
+## Usage
+
+```
+/wb
+```
+
+Toggles the main panel. Bind a key in *Esc to Key Bindings to AddOns to Wick's Bags* if you prefer.
+
+| Command | Effect |
+|---|---|
+| `/wb` | Toggle the panel |
+| `/wb show` | Show |
+| `/wb hide` | Hide |
+| `/wb reset` | Reset position to center |
+
+## Compatibility
+
+- TBC Classic Anniversary (2.5.5, Interface 20505)
+- Pure Lua, no library dependencies in v0.1
+- Works alongside default Blizzard bags (does not hide them yet; that is a v0.2 option)
+
+## License
+
+MIT for code (see [LICENSE](LICENSE)). Brand chrome and the "Wick's" wordmark are trademarked, see [TRADEMARK.md](https://github.com/Wicksmods/WickSuite/blob/main/TRADEMARK.md) in the Wick Suite repo.

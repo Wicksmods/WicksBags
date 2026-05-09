@@ -1,0 +1,7 @@
+<Bindings xmlns="http://www.blizzard.com/wow/ui/">
+    <Binding name="WICKSBAGS_TOGGLE" header="WICKSBAGS" category="ADDONS">
+        if WicksBags and WicksBags.Bag and WicksBags.Bag.Toggle then
+            WicksBags.Bag:Toggle()
+        end
+    </Binding>
+</Bindings>
