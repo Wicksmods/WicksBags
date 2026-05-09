@@ -74,6 +74,7 @@ local DB_DEFAULTS = {
         useItemRack     = true,        -- when ItemRack is loaded, bucket items by set name
         hideDefaultBank = true,        -- suppress Blizzard's BankFrame; show only Wick's Bank
         suppressAutoBags = true,       -- close Blizzard's default bag UI when it auto-opens at bank/vendor
+        autoOpenBags = true,           -- auto-open Wick's Bags at mailbox/vendor/bank/AH/tradeskill
         activeSourceId  = "auto",
         -- NOTE: panel position + width are NOT in defaults. Persistence on
         -- this build is buggy when fields exist via applyDefaults — the
@@ -153,7 +154,40 @@ local EVENTS = {
     "PLAYERBANKBAGSLOTS_CHANGED",
     "MERCHANT_SHOW",
     "MERCHANT_CLOSED",
+    "MAIL_SHOW",
+    "MAIL_CLOSED",
+    "AUCTION_HOUSE_SHOW",
+    "AUCTION_HOUSE_CLOSED",
+    "TRADE_SKILL_SHOW",
+    "TRADE_SKILL_CLOSE",
 }
+
+-- Track whether we auto-opened the bag panel — used to avoid closing
+-- bags the user opened manually before walking up to a mailbox/vendor.
+local autoOpenedBag = false
+
+local function suppressBlizzBags()
+    if WB.db and WB.db.options and WB.db.options.suppressAutoBags == false then return end
+    -- Schedule on a tick so we run after Blizzard's own auto-open.
+    C_Timer.After(0.05, function()
+        if CloseAllBags then CloseAllBags() end
+    end)
+end
+
+local function autoOpenBag()
+    if not WB.db or not WB.db.options then return end
+    if WB.db.options.autoOpenBags == false then return end
+    if not WB.Bag then return end
+    if not WB.db.ui.hidden then return end  -- already open; user opened it, don't track
+    autoOpenedBag = true
+    WB.Bag:Show()
+end
+
+local function autoCloseBag()
+    if not autoOpenedBag then return end
+    autoOpenedBag = false
+    if WB.Bag and WB.Bag.Hide then WB.Bag:Hide() end
+end
 for _, e in ipairs(EVENTS) do
     pcall(f.RegisterEvent, f, e)
 end
@@ -198,24 +232,24 @@ f:SetScript("OnEvent", function(self, event, ...)
         WB:Emit("COOLDOWN_CHANGED")
     elseif event == "BANKFRAME_OPENED" then
         WB:Emit("BANK_OPENED")
-        -- Blizzard auto-opens default bags at bank. Suppress (a tick later
-        -- so it overrides Blizzard's auto-open which fires after this).
-        if WB.db.options.suppressAutoBags ~= false then
-            C_Timer.After(0.05, function()
-                if CloseAllBags then CloseAllBags() end
-            end)
-        end
+        suppressBlizzBags()
+        autoOpenBag()
     elseif event == "BANKFRAME_CLOSED" then
         WB:Emit("BANK_CLOSED")
+        autoCloseBag()
     elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" then
         scheduleBankRefresh()
-    elseif event == "MERCHANT_SHOW" then
-        -- Blizzard auto-opens default bags at vendor. Suppress.
-        if WB.db.options.suppressAutoBags ~= false then
-            C_Timer.After(0.05, function()
-                if CloseAllBags then CloseAllBags() end
-            end)
-        end
+    elseif event == "MERCHANT_SHOW"
+        or event == "MAIL_SHOW"
+        or event == "AUCTION_HOUSE_SHOW"
+        or event == "TRADE_SKILL_SHOW" then
+        suppressBlizzBags()
+        autoOpenBag()
+    elseif event == "MERCHANT_CLOSED"
+        or event == "MAIL_CLOSED"
+        or event == "AUCTION_HOUSE_CLOSED"
+        or event == "TRADE_SKILL_CLOSE" then
+        autoCloseBag()
     end
     WB:Emit(event, ...)
 end)
@@ -241,11 +275,26 @@ SlashCmdList.WICKSBAGS = function(input)
     if input == "reset" and WB.Bag then WB.Bag:ResetPosition()  return end
     if input == "help" or input == "?" then
         print("|cff4FC778Wick's Bags|r")
-        print("  /wbags           toggle the panel")
-        print("  /wbags show      show")
-        print("  /wbags hide      hide")
-        print("  /wbags reset     reset position")
-        print("  /wbags dump      dump saved-variable state")
+        print("  /wbags                 toggle the panel")
+        print("  /wbags show            show")
+        print("  /wbags hide            hide")
+        print("  /wbags reset           reset position")
+        print("  /wbags autoopen on|off auto-open at mailbox/vendor/bank")
+        print("  /wbags dump            dump saved-variable state")
+        return
+    end
+    if input:match("^autoopen") then
+        local arg = input:match("^autoopen%s+(%S+)")
+        if arg == "off" or arg == "false" or arg == "0" then
+            WB.db.options.autoOpenBags = false
+            print("|cff4FC778Wick's Bags|r: auto-open disabled.")
+        elseif arg == "on" or arg == "true" or arg == "1" then
+            WB.db.options.autoOpenBags = true
+            print("|cff4FC778Wick's Bags|r: auto-open enabled.")
+        else
+            print(("|cff4FC778Wick's Bags|r: auto-open is %s. Use /wbags autoopen on|off."):format(
+                WB.db.options.autoOpenBags == false and "off" or "on"))
+        end
         return
     end
     if input == "dump" then
