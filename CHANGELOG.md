@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 - 2026-05-09
+
+Bag-fullness warning + keyring count fix.
+
+- **FREE tile stays visible at 0** instead of disappearing when bags fill up. Border + count text turn red so you notice immediately.
+- **Red warning strip** above the bottom bar when bags are full — discreet 2px line, only shows at 0 free.
+- **Keyring no longer inflates the FREE count.** Empty keyring slots (up to 32 on a fully upgraded keyring) were being counted as free bag slots, making the FREE tile show 29+ open even when you had nothing draggable left. Keys still show under the **Key** category as before; only the FREE accounting is fixed.
+
 ## 0.7.0 - 2026-05-08
 
 First public release. Bank panel, secure click for combat use, ItemRack-as-Equipment subclass, layout polish.

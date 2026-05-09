@@ -2,7 +2,7 @@
 ## Title: Wick's Bags
 ## Notes: Categorized bag panel for TBC. Auto-categorize, search, gold display, custom rules, pluggable category sources.
 ## Author: Wick
-## Version: 0.7.0
+## Version: 0.7.1
 ## SavedVariables: WicksBagsDB
 ## SavedVariablesPerCharacter: WicksBagsCharDB
 

@@ -349,15 +349,22 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
         -- pointing at bag/slot.)
     else
         b._iconTex:SetTexture(nil)
-        b._setQualityBorder({ 0.20, 0.18, 0.34, 1 })
         b._cd:Hide()
         if b._ilvlText then b._ilvlText:SetText("") end
         -- Free-slot aggregate tile: empty visual + count overlay.
-        if count and count > 0 then
-            b._countText:SetText(tostring(count))
+        -- When count == 0 (bags full), tint the border + count red as a
+        -- discreet "you're out of room" warning.
+        local n = count or 0
+        if n == 0 then
+            b._setQualityBorder({ 0.85, 0.18, 0.18, 1 })
+            b._countText:SetText("0")
+            b._countText:SetTextColor(0.95, 0.35, 0.35, 1)
             b._countText:Show()
         else
-            b._countText:SetText("")
+            b._setQualityBorder({ 0.20, 0.18, 0.34, 1 })
+            b._countText:SetText(tostring(n))
+            b._countText:SetTextColor(1, 1, 1, 1)
+            b._countText:Show()
         end
     end
 
@@ -667,6 +674,15 @@ local function buildPanel()
     local bagBarBorder = UI:NewTexture(bagBar, "BORDER", UI.C_BORDER)
     bagBarBorder:SetPoint("TOPLEFT");    bagBarBorder:SetPoint("TOPRIGHT")
     bagBarBorder:SetHeight(1)
+    -- Discreet "bags full" warning strip — 2px red line above the bottom
+    -- bar that shows only when freeCount == 0. Subtle but visible.
+    local fullWarning = bagBar:CreateTexture(nil, "OVERLAY")
+    fullWarning:SetColorTexture(0.85, 0.18, 0.18, 0.85)
+    fullWarning:SetPoint("TOPLEFT",  bagBar, "TOPLEFT",   0, 1)
+    fullWarning:SetPoint("TOPRIGHT", bagBar, "TOPRIGHT",  0, 1)
+    fullWarning:SetHeight(2)
+    fullWarning:Hide()
+    bagBar._fullWarning = fullWarning
     panel._bagBar = bagBar
     -- Right-click on empty area of the bottom bar clears the bag filter.
     -- Discoverable escape hatch — same pattern as Wick's Bank's bottom bar.
@@ -820,6 +836,11 @@ local function buildPanel()
     end
 
     function bagBar:Refresh()
+        -- Bags-full red warning strip — toggled from BG:Refresh which
+        -- stashes the freeCount on the panel.
+        if self._fullWarning then
+            self._fullWarning:SetShown((panel._freeCount or 1) == 0)
+        end
         -- Bag icons + filter highlight
         local activeFilter = WB.db.ui._filterBag
         for bag, btn in pairs(self._slots) do
@@ -1074,6 +1095,11 @@ local function gatherItems()
     -- Honors WB.db.ui._filterBag — if set, only collects from that one bag.
     -- Iterates regular bags PLUS the keyring (-2) so quest/dungeon keys
     -- show up in the panel under the "Key" auto-category.
+    --
+    -- IMPORTANT: empty keyring slots are skipped entirely. The keyring is
+    -- a separate container (up to 32 slots when fully upgraded) that can't
+    -- hold non-key items, so its empty slots don't represent draggable bag
+    -- space. Counting them inflates the FREE tile count by up to 32.
     local items = {}
     local filterBag = WB.db.ui and WB.db.ui._filterBag
     for _, bag in ipairs(BAG_IDS) do
@@ -1088,12 +1114,17 @@ local function gatherItems()
             -- Container item info: ns.GetContainerItemInfo handles both
             -- C_Container (table) and legacy (tuple) forms.
             local icon, count, locked, quality = ns.GetContainerItemInfo(bag, slot)
-            items[#items + 1] = {
-                bag = bag, slot = slot,
-                itemID = itemID, link = link,
-                count = count or 0, quality = quality,
-                icon = icon, locked = locked,
-            }
+            -- Skip empty keyring slots — they're not draggable bag space,
+            -- and counting them inflates the FREE tile by up to 32 on a
+            -- fully upgraded keyring.
+            if not (bag == KEYRING_CONTAINER and not itemID) then
+                items[#items + 1] = {
+                    bag = bag, slot = slot,
+                    itemID = itemID, link = link,
+                    count = count or 0, quality = quality,
+                    icon = icon, locked = locked,
+                }
+            end
         end
         end   -- close else branch
     end
@@ -1182,9 +1213,12 @@ function BG:Refresh()
             table.insert(buckets[cat], it)
         end
     end
-    if freeCount > 0 then
-        buckets["Free"] = { { itemID = nil, count = freeCount, isFreeAggregate = true } }
-    end
+    -- Always render the FREE tile, even at count=0 — it gives the user a
+    -- live "bags full" indicator (with red accents) instead of disappearing
+    -- right when they need to know.
+    buckets["Free"] = { { itemID = nil, count = freeCount, isFreeAggregate = true } }
+    -- Stash on the panel so the bottom bar can render its own warning state.
+    self.panel._freeCount = freeCount
 
     -- Junk filter
     if not WB.db.options.showJunk then
