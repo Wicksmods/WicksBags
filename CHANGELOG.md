@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 - 2026-05-09
+
+Bank tooltip fix.
+
+- **Bank items now show their tooltip** when hovered in the main bank window. Bank bag slots already worked; the main bank container needed a different API path in TBC.
+
 ## 0.7.1 - 2026-05-09
 
 Bag-fullness warning + keyring count fix.
