@@ -49,12 +49,13 @@ local DB_DEFAULTS = {
     -- additions to WicksBagsDB do NOT persist on this build.
     ui = {
         hidden   = true,
-        posPoint = "BOTTOMLEFT",
-        posRel   = "BOTTOMLEFT",
-        posX     = 0,
-        posY     = 0,
-        panelW   = 0,
     },
+    -- Panel positions stored as flat keys inside each pos table.
+    -- These tables are in DB_DEFAULTS so WoW tracks them from first load;
+    -- snapPosition() mutates keys in-place (proven pattern for persistence).
+    bagPos  = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
+    bankPos = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
+    avPos   = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
     options = {
         showJunk        = true,
         showHighlights  = true,
@@ -76,12 +77,6 @@ local DB_DEFAULTS = {
         suppressAutoBags = true,       -- close Blizzard's default bag UI when it auto-opens at bank/vendor
         autoOpenBags = true,           -- auto-open Wick's Bags at mailbox/vendor/bank/AH/tradeskill
         activeSourceId  = "auto",
-        -- NOTE: panel position + width are NOT in defaults. Persistence on
-        -- this build is buggy when fields exist via applyDefaults — the
-        -- only writes that round-tripped reliably (ui.bx in old code) were
-        -- runtime-only mutations of fields never present in defaults.
-        -- Position lives at WB.db.options.posPoint/posX/posY/posRel/panelW
-        -- and only exists once the user drags.
     },
     -- User-defined category overrides. Editable directly in saved variables;
     -- a UI for managing these lands in v0.4. Resolution order in Categories.lua:
@@ -91,6 +86,7 @@ local DB_DEFAULTS = {
         patterns = {},      -- ordered list: { { match = "Mageweave", category = "Mageweave Set" }, ... }
     },
 }
+
 local function applyDefaults(target, defaults)
     for k, v in pairs(defaults) do
         if type(v) == "table" then
@@ -101,7 +97,29 @@ local function applyDefaults(target, defaults)
         end
     end
 end
-applyDefaults(WicksBagsDB, DB_DEFAULTS)
+
+-- IMPORTANT: WoW's TBC Anniversary build loads SavedVariables AFTER addon
+-- file-scope code runs (proven via the DEBUG trace — bagPos was nil at
+-- file-scope but populated by PLAYER_LOGIN time). So we cannot apply
+-- defaults at file-scope; we'd be applying them to a fresh empty table
+-- that gets replaced when WoW loads the file. Defer to ADDON_LOADED.
+local function initSavedVars()
+    WicksBagsDB  = WicksBagsDB  or {}
+    WicksBagsAlts = WicksBagsAlts or {}
+    -- Migrate pre-split altSnapshots from WicksBagsDB to WicksBagsAlts.
+    if WicksBagsDB.altSnapshots and next(WicksBagsDB.altSnapshots) then
+        for key, snap in pairs(WicksBagsDB.altSnapshots) do
+            if not WicksBagsAlts[key] then WicksBagsAlts[key] = snap end
+        end
+        WicksBagsDB.altSnapshots = nil
+    end
+    applyDefaults(WicksBagsDB, DB_DEFAULTS)
+    -- Rebind WB.db so any later function calls hit the loaded global.
+    if WicksBags then
+        WicksBags.db    = WicksBagsDB
+        WicksBags.altDB = WicksBagsAlts
+    end
+end
 
 WicksBagsCharDB = WicksBagsCharDB or { version = 1 }
 
@@ -112,8 +130,13 @@ WicksBags = WicksBags or {}
 local WB = WicksBags
 ns.WB = WB
 WB.ADDON = ADDON
-WB.db = WicksBagsDB
-WB.charDB = WicksBagsCharDB
+-- WB.db / WB.altDB are set by initSavedVars() on ADDON_LOADED, after WoW
+-- actually loads the saved file. Setting them here at file-scope would
+-- cache a reference to a fresh-empty table that gets replaced when the
+-- file loads, leaving WB.db stale.
+WB.db    = WicksBagsDB   or {}    -- placeholder; rebound on ADDON_LOADED
+WB.altDB = WicksBagsAlts or {}    -- placeholder; rebound on ADDON_LOADED
+WB.charDB = WicksBagsCharDB or { version = 1 }
 
 -- ============================================================
 -- Pub/sub event bus (internal events between modules)
@@ -140,6 +163,7 @@ end
 local f = CreateFrame("Frame")
 WB.eventFrame = f
 local EVENTS = {
+    "ADDON_LOADED",
     "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
     "BAG_UPDATE",
@@ -160,6 +184,7 @@ local EVENTS = {
     "AUCTION_HOUSE_CLOSED",
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_CLOSE",
+    "PLAYER_LOGOUT",
 }
 
 -- Track whether we auto-opened the bag panel — used to avoid closing
@@ -216,7 +241,17 @@ local function scheduleBankRefresh()
 end
 
 f:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
+    if event == "ADDON_LOADED" then
+        local arg1 = ...
+        if arg1 == ADDON then
+            -- Saved variables are now loaded. Apply defaults, run
+            -- migrations, and (re)bind WB.db / WB.altDB to the loaded
+            -- globals. This is the canonical "saved vars ready" event
+            -- on this build; doing it earlier (file-scope) misses the
+            -- file content entirely.
+            initSavedVars()
+        end
+    elseif event == "PLAYER_LOGIN" then
         WB:Emit("LOGIN")
         print("|cff4FC778Wick's Bags|r loaded. /wbags to toggle.")
     elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "ITEM_LOCK_CHANGED" then
@@ -250,6 +285,17 @@ f:SetScript("OnEvent", function(self, event, ...)
         or event == "AUCTION_HOUSE_CLOSED"
         or event == "TRADE_SKILL_CLOSE" then
         autoCloseBag()
+    elseif event == "PLAYER_LOGOUT" then
+        -- Snap all panel positions before the game serializes SavedVariables.
+        if WB.Bag and WB.Bag.panel and WB.Bag.panel._snapPosition then
+            WB.Bag.panel._snapPosition()
+        end
+        if WB.Bank and WB.Bank.panel and WB.Bank.panel._snapPosition then
+            WB.Bank.panel._snapPosition()
+        end
+        if WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel._snapPosition then
+            WB.AltViewer.panel._snapPosition()
+        end
     end
     WB:Emit(event, ...)
 end)
@@ -299,20 +345,22 @@ SlashCmdList.WICKSBAGS = function(input)
     end
     if input == "dump" then
         print("|cff4FC778Wick's Bags|r DB dump:")
-        local opt = WB.db.options or {}
-        print(("  options.posPoint = %s"):format(tostring(opt.posPoint)))
-        print(("  options.posRel   = %s"):format(tostring(opt.posRel)))
-        print(("  options.posX     = %s"):format(tostring(opt.posX)))
-        print(("  options.posY     = %s"):format(tostring(opt.posY)))
-        print(("  options.panelW   = %s"):format(tostring(opt.panelW)))
-        print(("  ui.hidden        = %s"):format(tostring(WB.db.ui.hidden)))
-        print(("  options keys ="))
-        local n = 0
-        for k, v in pairs(WB.db.options or {}) do
-            n = n + 1
-            print(("    %s = %s"):format(tostring(k), tostring(v)))
+        local pos = WB.db.bagPos or {}
+        print(("  bagPos.posPoint = %s"):format(tostring(pos.posPoint)))
+        print(("  bagPos.posRel   = %s"):format(tostring(pos.posRel)))
+        print(("  bagPos.posX     = %s"):format(tostring(pos.posX)))
+        print(("  bagPos.posY     = %s"):format(tostring(pos.posY)))
+        print(("  bagPos.panelW   = %s"):format(tostring(pos.panelW)))
+        print(("  bankPos exists  = %s"):format(tostring(WB.db.bankPos ~= nil)))
+        print(("  avPos exists    = %s"):format(tostring(WB.db.avPos ~= nil)))
+        print(("  ui.hidden       = %s"):format(tostring(WB.db.ui.hidden)))
+        if WB.Bag and WB.Bag.panel and WB.Bag.panel:IsShown() then
+            local lp, _, lrp, lx, ly = WB.Bag.panel:GetPoint()
+            print(("  panel live pos  = %s/%s x=%s y=%s"):format(tostring(lp), tostring(lrp), tostring(lx), tostring(ly)))
+            print(("  panel live w    = %s"):format(tostring(WB.Bag.panel:GetWidth())))
+        else
+            print("  panel not shown")
         end
-        print(("  total options keys: %d"):format(n))
         return
     end
     print("|cff4FC778Wick's Bags|r: unknown command. Try /wb help")

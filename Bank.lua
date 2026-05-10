@@ -384,10 +384,10 @@ end
 -- Build the panel
 -- ============================================================
 local function buildPanel()
-    local cfg = WB.db.options   -- reuse same options table for shared toggles
+    local cfg = WB.db.options   -- feature toggles (not position)
+    local pos = WB.db.bankPos  -- pre-seeded in DB_DEFAULTS; always exists
 
     local panel = CreateFrame("Frame", "WicksBankPanel", UIParent)
-    panel:SetSize(MAX_PANEL_W, 200)
     panel:SetFrameStrata("HIGH")
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
@@ -401,14 +401,32 @@ local function buildPanel()
     panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:ClearAllPoints()
-    panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 120, 240)
+
+    local startW = (pos.panelW and pos.panelW > 0) and pos.panelW or MAX_PANEL_W
+    panel:SetSize(startW, 200)
+    if pos.posPoint and pos.posPoint ~= false then
+        panel:SetPoint(pos.posPoint, UIParent, pos.posRel, pos.posX or 0, pos.posY or 0)
+    else
+        panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 120, 240)
+    end
 
     UI:NewTexture(panel, "BACKGROUND", UI.C_BG):SetAllPoints(panel)
     UI:AddBorder(panel)
     UI:AddCornerAccents(panel)
 
+    local function snapPosition()
+        local p, _, rp, x, y = panel:GetPoint()
+        if not p then return end
+        local t = WB.db.bankPos
+        t.posPoint = p;  t.posRel = rp or p;  t.posX = x or 0;  t.posY = y or 0;  t.panelW = panel:GetWidth()
+    end
+    panel._snapPosition = snapPosition
+
+    panel:SetScript("OnMouseDown", function(self) self:Raise() end)
     panel:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    panel:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    panel:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing(); snapPosition()
+    end)
 
     -- Header strip
     local header = CreateFrame("Frame", nil, panel)
@@ -678,6 +696,7 @@ local function buildPanel()
     grip:SetScript("OnMouseUp", function()
         panel:StopMovingOrSizing()
         panel._isResizing = false
+        if panel._snapPosition then panel._snapPosition() end
         if WB.Bank and WB.Bank.Refresh then WB.Bank:Refresh() end
     end)
 
@@ -1021,12 +1040,22 @@ end
 
 function BNK:Show()
     if not self.panel then self:Init() end
+    local pos = WB.db.bankPos
+    if pos and pos.posPoint and pos.posPoint ~= false then
+        self.panel:ClearAllPoints()
+        self.panel:SetPoint(pos.posPoint, UIParent, pos.posRel, pos.posX or 0, pos.posY or 0)
+    end
+    if pos and pos.panelW and pos.panelW > 0 then
+        self.panel:SetWidth(pos.panelW)
+    end
     self.panel:Show()
+    self.panel:Raise()
     self:Refresh()
 end
 
 function BNK:Hide()
     if not self.panel then return end
+    if self.panel._snapPosition then self.panel._snapPosition() end
     self.panel:Hide()
     -- Walking away from banker fires BANKFRAME_CLOSED which calls this
     -- and also fires Blizzard's CloseBankFrame. Don't double-call.

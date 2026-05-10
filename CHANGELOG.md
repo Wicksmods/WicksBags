@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 - 2026-05-10
+
+Alt inventory viewer + window-position persistence.
+
+- **Alt inventory viewer** — view any of your other characters' bags and bank side-by-side with your own. New title-bar button opens the AltViewer; pick a character from the dropdown to see what they've got. Snapshots capture each time you log in to that character and open your bags/bank, so you'll need to visit each alt once after this update before they show up.
+- **Window positions persist across sessions and reloads** for bags, bank, and alt viewer. Previously the panels would reset to default on every `/reload` because of a saved-variable load-timing quirk on TBC Anniversary — saved data loads AFTER the addon's file-scope code runs, so any reference cached at file-scope was stale. Now the addon rebinds those references on ADDON_LOADED, when the saved file content is actually available.
+- **Alt snapshots isolated to their own saved variable** (`WicksBagsAlts`). If anything in the snapshot data ever causes a corrupted file write, positions and options stay intact in `WicksBagsDB`.
+
 ## 0.7.2 - 2026-05-09
 
 Bank tooltip fix.

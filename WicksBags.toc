@@ -2,8 +2,8 @@
 ## Title: Wick's Bags
 ## Notes: Categorized bag panel for TBC. Auto-categorize, search, gold display, custom rules, pluggable category sources.
 ## Author: Wick
-## Version: 0.7.2
-## SavedVariables: WicksBagsDB
+## Version: 0.8.0
+## SavedVariables: WicksBagsDB, WicksBagsAlts
 ## SavedVariablesPerCharacter: WicksBagsCharDB
 
 # Core
@@ -13,6 +13,7 @@ UI.lua
 Options.lua
 Bag.lua
 Bank.lua
+AltViewer.lua
 
 # Bindings.xml is auto-loaded by WoW from the addon root because of its
 # special filename — listing it here would load it twice and trigger

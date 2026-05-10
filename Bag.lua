@@ -379,17 +379,16 @@ end
 -- ============================================================
 local function buildPanel()
     -- cfg = WicksBagsDB.ui (visibility flags only)
-    -- opt = WicksBagsDB.options (everything else, including position +
-    --       width — putting them here rides the same code path that
-    --       successfully persisted other options keys on this build)
+    -- opt = WicksBagsDB.options (feature toggles, sort mode, etc.)
+    -- pos = WicksBagsDB.bagPos (panel position + width — isolated so the
+    --       serializer only touches this sub-table, matching the legacy key
+    --       that already round-trips reliably on TBC Anniversary)
     local cfg = WB.db.ui
     local opt = WB.db.options
+    local pos = WB.db.bagPos  -- pre-seeded in DB_DEFAULTS; always exists
 
     local panel = CreateFrame("Frame", "WicksBagsPanel", UIParent)
-    -- 0-default trap: in Lua `0 or X` returns 0 (only nil/false are falsy),
-    -- so a saved width of 0 would yield a zero-width invisible panel. Guard
-    -- explicitly against non-positive widths.
-    local startW = (opt.panelW and opt.panelW > 0) and opt.panelW or MAX_PANEL_W
+    local startW = (pos.panelW and pos.panelW > 0) and pos.panelW or MAX_PANEL_W
     panel:SetSize(startW, 200)
     panel:SetFrameStrata("HIGH")
     panel:SetClampedToScreen(true)
@@ -404,10 +403,9 @@ local function buildPanel()
     panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:ClearAllPoints()
-    -- Restore position from opt (= WicksBagsDB.options).
-    local pp, prp, px, py = opt.posPoint, opt.posRel, opt.posX, opt.posY
-    if pp and prp and px ~= nil and py ~= nil and (px ~= 0 or py ~= 0) then
-        panel:SetPoint(pp, UIParent, prp, px, py)
+    -- posPoint is false (not nil) when no position has been saved yet.
+    if pos.posPoint and pos.posPoint ~= false then
+        panel:SetPoint(pos.posPoint, UIParent, pos.posRel, pos.posX or 0, pos.posY or 0)
     else
         panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT",
             math.max(120, (UIParent:GetWidth() / 2) - 240), 240)
@@ -425,13 +423,12 @@ local function buildPanel()
     local function snapPosition()
         local p, _, rp, x, y = panel:GetPoint()
         if not p then return end
-        opt.posPoint = p
-        opt.posRel   = rp or p
-        opt.posX     = x or 0
-        opt.posY     = y or 0
+        local t = WB.db.bagPos
+        t.posPoint = p;  t.posRel = rp or p;  t.posX = x or 0;  t.posY = y or 0;  t.panelW = panel:GetWidth()
     end
     panel._snapPosition = snapPosition
 
+    panel:SetScript("OnMouseDown", function(self) self:Raise() end)
     panel:SetScript("OnDragStart", function(self) self:StartMoving() end)
     panel:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
@@ -616,6 +613,16 @@ local function buildPanel()
         function() if WB.Bag and WB.Bag.MarkAllSeen then WB.Bag:MarkAllSeen() end end
     )
 
+    -- Alts viewer button: group/people icon, active (full color) when viewer is open.
+    local altsBtn = makeTitleTexIcon(
+        "Interface\\Icons\\INV_Misc_GroupLooking",
+        "View alt characters' bags and bank",
+        function() return WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel:IsShown() end,
+        function()
+            if WB.AltViewer then WB.AltViewer:Toggle() end
+        end
+    )
+
     panel._refreshTitleIcons = function()
         for _, b in ipairs(titleButtons) do
             if b._refresh then b._refresh() end
@@ -652,7 +659,7 @@ local function buildPanel()
     -- Right-cluster icon row, anchored leftward from the cog. Visual order
     -- (left to right within the row): mark-seen, bag-bar, highlights, junk, sort.
     local prev = cog
-    for _, btn in ipairs({ sortBtn, junkBtn, highlightsBtn, bagBarBtn, markSeenBtn }) do
+    for _, btn in ipairs({ sortBtn, junkBtn, highlightsBtn, bagBarBtn, markSeenBtn, altsBtn }) do
         btn:SetPoint("RIGHT", prev, "LEFT", -4, 0)
         prev = btn
     end
@@ -912,7 +919,7 @@ local function buildPanel()
     grip:SetScript("OnMouseUp", function()
         panel:StopMovingOrSizing()
         panel._isResizing = false
-        opt.panelW = panel:GetWidth()
+        pos.panelW = panel:GetWidth()
         -- Resize anchors the frame at its current location; recapture
         -- BOTTOMLEFT coords so the saved position matches the on-screen
         -- position after the resize finishes.
@@ -1650,15 +1657,16 @@ end
 function BG:Show()
     if not self.panel then return end
     -- Force-restore saved position and width on every Show.
-    local opt = WB.db.options
-    if opt.posPoint and opt.posRel and (opt.posX ~= 0 or opt.posY ~= 0) then
+    local pos = WB.db.bagPos
+    if pos and pos.posPoint and pos.posPoint ~= false then
         self.panel:ClearAllPoints()
-        self.panel:SetPoint(opt.posPoint, UIParent, opt.posRel, opt.posX, opt.posY)
+        self.panel:SetPoint(pos.posPoint, UIParent, pos.posRel, pos.posX or 0, pos.posY or 0)
     end
-    if opt.panelW and opt.panelW > 0 then
-        self.panel:SetWidth(opt.panelW)
+    if pos and pos.panelW and pos.panelW > 0 then
+        self.panel:SetWidth(pos.panelW)
     end
     self.panel:Show()
+    self.panel:Raise()
     WB.db.ui.hidden = false
     self:ApplyOptionsUI()
     self:Refresh()
@@ -1666,8 +1674,12 @@ end
 
 function BG:Hide()
     if not self.panel then return end
+    if self.panel._snapPosition then self.panel._snapPosition() end
     self.panel:Hide()
     WB.db.ui.hidden = true
+    if WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel:IsShown() then
+        WB.AltViewer:Hide()
+    end
     -- Note: we no longer auto-mark items as seen on hide. The "Recent"
     -- container persists across opens until the user explicitly clicks the
     -- mark-seen icon (or the Options "Mark all items seen" button).
@@ -1682,11 +1694,11 @@ function BG:ResetPosition()
     if not self.panel then return end
     local defX = math.max(120, (UIParent:GetWidth() / 2) - 240)
     local defY = 240
-    local opt = WB.db.options
-    opt.posPoint = "BOTTOMLEFT"
-    opt.posRel   = "BOTTOMLEFT"
-    opt.posX     = defX
-    opt.posY     = defY
+    local pos = WB.db.bagPos
+    pos.posPoint = "BOTTOMLEFT"
+    pos.posRel   = "BOTTOMLEFT"
+    pos.posX     = defX
+    pos.posY     = defY
     self.panel:ClearAllPoints()
     self.panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", defX, defY)
     self:Show()
