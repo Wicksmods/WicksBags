@@ -1,3 +1,9 @@
+# Wick's Bags — Changelog
+
+## 0.8.1 — 2026-05-10
+
+- (edit this entry with the actual changes)
+
 # Changelog
 
 ## 0.8.0 - 2026-05-10
