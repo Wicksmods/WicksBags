@@ -945,6 +945,27 @@ end
 -- ============================================================
 -- Layout pass: walk all bags, classify, group by category, place slots
 -- ============================================================
+-- Transfer items from bags to bank. Staggers calls by 0.05s per item so
+-- the server doesn't throttle them. Skips items with no itemID (free tile).
+-- Bank must be open for UseContainerItem to auto-shuttle the item.
+local function transferItemsToBankStaggered(items)
+    if not items or #items == 0 then return end
+    local delay = 0
+    for _, it in ipairs(items) do
+        if it.itemID and it.bag and it.slot then
+            local bag, slot = it.bag, it.slot
+            C_Timer.After(delay, function()
+                if ns.UseContainerItem then
+                    ns.UseContainerItem(bag, slot)
+                elseif UseContainerItem then
+                    UseContainerItem(bag, slot)
+                end
+            end)
+            delay = delay + 0.05
+        end
+    end
+end
+
 local categoryHeaders = {}  -- pool of section-header font strings
 
 local function getCategoryHeader(parent, index)
@@ -964,6 +985,13 @@ local function getCategoryHeader(parent, index)
         -- "JEWELCRAFTING" bleed into the next sub-block.
         if label.SetWordWrap then label:SetWordWrap(false) end
         f._label = label
+        -- Right-click to bulk-push this sub-category to the bank.
+        f:EnableMouse(true)
+        f:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" and self._items and WB.Bank and WB.Bank.panel and WB.Bank.panel:IsShown() then
+                transferItemsToBankStaggered(self._items)
+            end
+        end)
         h = f
         categoryHeaders[index] = h
     end
@@ -1007,6 +1035,19 @@ local function getGroupContainer(parent, index)
         local label = UI:NewText(f, 10, UI.C_GREEN)
         label:SetPoint("TOP", 0, -3)   -- centered horizontally in the container
         f._label = label
+        -- Transparent button over the group header strip so right-click on
+        -- the parent-class label bulk-pushes the entire group to the bank.
+        local hdrBtn = CreateFrame("Button", nil, f)
+        hdrBtn:SetPoint("TOPLEFT", 0, 0)
+        hdrBtn:SetPoint("TOPRIGHT", 0, 0)
+        hdrBtn:SetHeight(GROUP_HEADER_H)
+        hdrBtn:RegisterForClicks("RightButtonUp")
+        hdrBtn:SetScript("OnClick", function(self, button)
+            if button == "RightButton" and f._groupItems and WB.Bank and WB.Bank.panel and WB.Bank.panel:IsShown() then
+                transferItemsToBankStaggered(f._groupItems)
+            end
+        end)
+        f._hdrBtn = hdrBtn
         -- Optional accent border (1px ring offset 2px outside the main
         -- border). Used to subtly mark special containers like "Recent".
         -- Hidden by default; toggled via f._setAccent(true/false).
@@ -1156,6 +1197,9 @@ end
 function BG:Refresh()
     if not self.panel then return end
     if not self.panel:IsShown() then return end
+    -- Don't re-sort while the cursor is holding an item. Moving a slot fires
+    -- BAG_UPDATE which would reshuffle positions before the next click lands.
+    if CursorHasItem and CursorHasItem() then return end
 
     -- Rebuild the ItemRack reverse-map at the top of every refresh so set
     -- edits show up live (no /reload). Cheap: a few dozen string ops at most.
@@ -1453,6 +1497,10 @@ function BG:Refresh()
     -- the dimension that user-drag changes, so the layout adapts as the
     -- panel resizes.
     --
+    -- Recent is pinned to (0, 0) and seeded into the packer as a pre-placed
+    -- phantom before the masonry runs on the remaining groups, so it always
+    -- occupies the top-left corner of the panel body.
+    --
     -- Heuristics tried:
     --   * natural   — DISPLAY_ORDER (preserves semantic top-down reading)
     --   * tall      — tallest first (best for narrow panels: tall anchors
@@ -1460,8 +1508,23 @@ function BG:Refresh()
     --   * wide      — widest first (best when one block is much wider than
     --                  the rest and would otherwise force a late row break)
     --   * area      — largest area first (well-rounded fallback)
-    local function tryPack(order)
+
+    -- Split Recent out so it can be pinned before masonry runs.
+    local recentGroup = nil
+    local nonRecentGroups = {}
+    for _, g in ipairs(groups) do
+        if g.parent == "Recent" then
+            recentGroup = g
+        else
+            nonRecentGroups[#nonRecentGroups + 1] = g
+        end
+    end
+
+    local function tryPack(order, seedPlaced, seedH)
         local placed = {}
+        for _, p in ipairs(seedPlaced or {}) do
+            placed[#placed + 1] = p
+        end
         local function overlapsAny(x, y, w, h)
             for _, p in ipairs(placed) do
                 if x < p.x + p.w + CAT_GAP_X
@@ -1473,7 +1536,7 @@ function BG:Refresh()
             return false
         end
         local positions = {}
-        local totalH = 0
+        local totalH = seedH or 0
         for _, g in ipairs(order) do
             local xs, ys = { 0 }, { 0 }
             for _, p in ipairs(placed) do
@@ -1502,9 +1565,19 @@ function BG:Refresh()
         return totalH, positions
     end
 
+    -- Seed: if Recent exists it occupies (0, 0) unconditionally.
+    local seedPlaced, seedH = {}, 0
+    local bestPositions = {}
+    if recentGroup then
+        recentGroup.x, recentGroup.y = 0, 0
+        bestPositions[recentGroup] = { x = 0, y = 0 }
+        seedPlaced = { { x = 0, y = 0, w = recentGroup.w, h = recentGroup.h } }
+        seedH = recentGroup.h
+    end
+
     local function copyOrder()
         local out = {}
-        for i, g in ipairs(groups) do out[i] = g end
+        for i, g in ipairs(nonRecentGroups) do out[i] = g end
         return out
     end
 
@@ -1518,19 +1591,27 @@ function BG:Refresh()
     table.sort(orderings[3], function(a, b) return a.w > b.w end)
     table.sort(orderings[4], function(a, b) return a.w * a.h > b.w * b.h end)
 
-    local bestH, bestPositions = math.huge, nil
+    local bestH = math.huge
+    local bestNonRecentPos = nil
     for _, ord in ipairs(orderings) do
-        local h, pos = tryPack(ord)
+        local h, pos = tryPack(ord, seedPlaced, seedH)
         if h < bestH then
             bestH = h
-            bestPositions = pos
+            bestNonRecentPos = pos
+        end
+    end
+    if bestH == math.huge then bestH = seedH end
+    -- Merge non-recent positions into bestPositions.
+    if bestNonRecentPos then
+        for g, p in pairs(bestNonRecentPos) do
+            bestPositions[g] = p
         end
     end
 
     local totalH = bestH
     for _, g in ipairs(groups) do
         local p = bestPositions[g]
-        g.x, g.y = p.x, p.y
+        g.x, g.y = (p and p.x or 0), (p and p.y or 0)
     end
 
     -- Render: containers, sub-cat headers (when not skipped), item slots
@@ -1550,6 +1631,15 @@ function BG:Refresh()
             container._setAccent(g.parent == "Recent" or g.containerHeader == "RECENT")
         end
 
+        -- Collect all items in this group for the group-header right-click transfer.
+        local groupItems = {}
+        for _, blk in ipairs(g.blocks) do
+            for _, it in ipairs(blk.items) do
+                if it.itemID then groupItems[#groupItems + 1] = it end
+            end
+        end
+        container._groupItems = groupItems
+
         local subBaseX = g.x + GROUP_PAD_X
         local subBaseY = g.y + GROUP_PAD_TOP
 
@@ -1564,6 +1654,8 @@ function BG:Refresh()
                 -- so no SetWidth on the label — the frame's blk.w sets the
                 -- centering reference and the text auto-shrinks to fit.
                 h._label:SetText(blk.cat:upper())
+                -- Items for sub-category right-click transfer.
+                h._items = blk.items
             end
 
             -- Always offset items by CATEGORY_H so single-sub groups (no

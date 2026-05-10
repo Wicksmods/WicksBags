@@ -220,14 +220,25 @@ end
 -- BAG_UPDATE fires per-bag and many times in a row. Coalesce via a short
 -- timer that fires at most every 0.05s. BAG_UPDATE_DELAYED is Blizzard's
 -- own coalesced event, but it doesn't always fire. Use both.
+--
+-- Layout is suppressed while the cursor holds an item. Moving an item
+-- fires BAG_UPDATE immediately, but re-sorting the panel mid-drag shifts
+-- all the slot positions — the next click lands on whatever shuffled in.
+-- Instead we re-defer in 0.1s increments until the cursor is free, then
+-- emit one final BAGS_DIRTY so counts/locks still update promptly.
 local refreshDirty = false
 local function scheduleRefresh()
     if refreshDirty then return end
     refreshDirty = true
-    C_Timer.After(0.05, function()
-        refreshDirty = false
-        WB:Emit("BAGS_DIRTY")
-    end)
+    local function tryEmit()
+        if CursorHasItem and CursorHasItem() then
+            C_Timer.After(0.1, tryEmit)
+        else
+            refreshDirty = false
+            WB:Emit("BAGS_DIRTY")
+        end
+    end
+    C_Timer.After(0.05, tryEmit)
 end
 
 local bankDirty = false

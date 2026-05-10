@@ -279,6 +279,31 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
 end
 
 -- ============================================================
+-- Transfer bank items to bags. Staggers calls by 0.05s per item.
+-- UseContainerItem on a bank slot while bank is open shuttles the item
+-- to the first empty bag slot (same as clicking the item in Blizzard's
+-- default bank frame).
+local function transferItemsToBagsStaggered(items)
+    if not items or #items == 0 then return end
+    local delay = 0
+    for _, it in ipairs(items) do
+        if it.itemID and it.bag and it.slot then
+            local bag, slot = it.bag, it.slot
+            C_Timer.After(delay, function()
+                -- Main bank uses PickupBankItem + PutItemInBag; bank bags use
+                -- UseContainerItem. UseContainerItem works for both on TBC 2.5.5
+                -- when the bank frame is open.
+                if ns.UseContainerItem then
+                    ns.UseContainerItem(bag, slot)
+                elseif UseContainerItem then
+                    UseContainerItem(bag, slot)
+                end
+            end)
+            delay = delay + 0.05
+        end
+    end
+end
+
 -- Header / container pools
 -- ============================================================
 local categoryHeaders = {}
@@ -292,6 +317,13 @@ local function getCategoryHeader(parent, index)
         label:SetText("")
         if label.SetWordWrap then label:SetWordWrap(false) end
         f._label = label
+        -- Right-click to bulk-pull this sub-category from bank to bags.
+        f:EnableMouse(true)
+        f:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" and self._items then
+                transferItemsToBagsStaggered(self._items)
+            end
+        end)
         h = f
         categoryHeaders[index] = h
     end
@@ -330,6 +362,19 @@ local function getGroupContainer(parent, index)
         local label = UI:NewText(f, 10, UI.C_GREEN)
         label:SetPoint("TOP", 0, -3)
         f._label = label
+        -- Transparent button over the group header strip so right-click on
+        -- the parent-class label bulk-pulls the entire group from bank to bags.
+        local hdrBtn = CreateFrame("Button", nil, f)
+        hdrBtn:SetPoint("TOPLEFT", 0, 0)
+        hdrBtn:SetPoint("TOPRIGHT", 0, 0)
+        hdrBtn:SetHeight(GROUP_HEADER_H)
+        hdrBtn:RegisterForClicks("RightButtonUp")
+        hdrBtn:SetScript("OnClick", function(self, button)
+            if button == "RightButton" and f._groupItems then
+                transferItemsToBagsStaggered(f._groupItems)
+            end
+        end)
+        f._hdrBtn = hdrBtn
         groupContainers[index] = f
     end
     f:SetParent(parent); f:Show()
@@ -976,6 +1021,15 @@ function BNK:Refresh()
         container:SetSize(g.w, g.h)
         container._label:SetText(g.containerHeader)
 
+        -- Collect all items in this group for the group-header right-click transfer.
+        local groupItems = {}
+        for _, blk in ipairs(g.blocks) do
+            for _, it in ipairs(blk.items) do
+                if it.itemID then groupItems[#groupItems + 1] = it end
+            end
+        end
+        container._groupItems = groupItems
+
         local subBaseX = g.x + GROUP_PAD_X
         local subBaseY = g.y + GROUP_PAD_TOP
 
@@ -987,6 +1041,8 @@ function BNK:Refresh()
                 h:SetPoint("TOPLEFT", body, "TOPLEFT", subBaseX + blk.subX, -(subBaseY + blk.subY))
                 h:SetWidth(blk.w)
                 h._label:SetText(blk.cat:upper())
+                -- Items for sub-category right-click transfer.
+                h._items = blk.items
             end
 
             local slotsYOffset = CATEGORY_H
