@@ -172,6 +172,7 @@ local EVENTS = {
     "GET_ITEM_INFO_RECEIVED",
     "PLAYER_MONEY",
     "BAG_UPDATE_COOLDOWN",
+    "PLAYER_EQUIPMENT_CHANGED",
     "BANKFRAME_OPENED",
     "BANKFRAME_CLOSED",
     "PLAYERBANKSLOTS_CHANGED",
@@ -269,6 +270,11 @@ f:SetScript("OnEvent", function(self, event, ...)
         scheduleRefresh()
         -- ITEM_LOCK_CHANGED also fires on bank slots; nudge bank too
         if event == "ITEM_LOCK_CHANGED" then scheduleBankRefresh() end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        -- Bag slots are equipment slots — equipping/unequipping a bag fires
+        -- this event. Refresh both panels so the bag-bar icons update.
+        scheduleRefresh()
+        scheduleBankRefresh()
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         scheduleRefresh()
         scheduleBankRefresh()

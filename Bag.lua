@@ -703,6 +703,8 @@ local function buildPanel()
     end)
 
     -- Bag icons (5: backpack + 4 carry bags), anchored on the LEFT.
+    -- Slots 1-4 are drag sources (pick up equipped bag) and drag targets
+    -- (equip a bag from cursor). Slot 0 (backpack) is fixed and non-draggable.
     bagBar._slots = {}
     local bagSlotSize = 22
     for bag = 0, NUM_BAGS do
@@ -711,6 +713,9 @@ local function buildPanel()
         btn:SetPoint("LEFT", bag * (bagSlotSize + 3) + 4, 0)
         btn:EnableMouse(true)
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        if bag > 0 then
+            btn:RegisterForDrag("LeftButton")
+        end
         local icon = btn:CreateTexture(nil, "ARTWORK")
         icon:SetAllPoints(btn)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -721,31 +726,54 @@ local function buildPanel()
         hilite:SetPoint("TOPLEFT", -1, 1)
         hilite:SetPoint("BOTTOMRIGHT", 1, -1)
         hilite:Hide()
+        -- Empty-slot indicator: "+" shown when no bag is equipped here.
+        local emptyMark = btn:CreateFontString(nil, "OVERLAY")
+        emptyMark:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        emptyMark:SetTextColor(UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3], 0.6)
+        emptyMark:SetPoint("CENTER")
+        emptyMark:SetText("+")
+        emptyMark:Hide()
         btn._icon = icon
         btn._hilite = hilite
+        btn._emptyMark = emptyMark
         btn._bag = bag
         btn:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:ClearLines()
             if bag == 0 then
                 GameTooltip:AddLine("Backpack", 1, 1, 1)
+                GameTooltip:AddLine("Left-click: open backpack", 1, 1, 1)
             else
                 local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bag) or nil
-                if invID then GameTooltip:SetInventoryItem("player", invID) end
-                GameTooltip:AddLine(("Bag %d"):format(bag),
-                    UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+                local hasBag = invID and GetInventoryItemID("player", invID) ~= nil
+                if invID and hasBag then
+                    GameTooltip:SetInventoryItem("player", invID)
+                    GameTooltip:AddLine("Drag to move or unequip", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+                else
+                    GameTooltip:AddLine(("Bag slot %d (empty)"):format(bag), 1, 1, 1)
+                    GameTooltip:AddLine("Drag a bag here to equip it", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+                end
+                GameTooltip:AddLine("Right-click: toggle filter", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             end
-            GameTooltip:AddLine("Left-click: open this bag", 1, 1, 1)
-            GameTooltip:AddLine("Right-click: toggle filter (click again to clear)",
-                UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        -- Left-click: open the specific bag. Calls OpenBag/OpenBackpack
-        -- directly (not MainMenuBarBackpackButton:Click) so addons that
-        -- differentiate per-bag can do so. With BetterBags loaded, this may
-        -- still consolidate into a single UI — that's BetterBags' design.
-        -- Right-click: toggle filter (Wick's panel shows only this bag).
+        -- Drag start: pick up the equipped bag so it can be moved or unequipped.
+        if bag > 0 then
+            btn:SetScript("OnDragStart", function(self)
+                if InCombatLockdown() then return end
+                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bag) or nil
+                if invID and GetInventoryItemID("player", invID) then
+                    PickupBagFromSlot(invID)
+                end
+            end)
+            -- Receive a drag (bag dropped onto this slot) — equip it here.
+            btn:SetScript("OnReceiveDrag", function(self)
+                if InCombatLockdown() then return end
+                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bag) or nil
+                if invID then PutItemInBag(invID) end
+            end)
+        end
         btn:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
                 if WB.db.ui._filterBag == bag then
@@ -757,9 +785,14 @@ local function buildPanel()
                 if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
                 return
             end
-            -- Left click → toggle the specific bag (open if closed, close if
-            -- open). Uses ToggleBag/ToggleBackpack so a second click on the
-            -- same icon closes it.
+            -- Left-click with cursor item: equip it into this bag slot.
+            if bag > 0 and CursorHasItem and CursorHasItem() then
+                if InCombatLockdown() then return end
+                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bag) or nil
+                if invID then PutItemInBag(invID) end
+                return
+            end
+            -- Left-click (no cursor): toggle/open the bag.
             if InCombatLockdown() then return end
             if bag == 0 then
                 if ToggleBackpack then ToggleBackpack()
@@ -848,7 +881,7 @@ local function buildPanel()
         if self._fullWarning then
             self._fullWarning:SetShown((panel._freeCount or 1) == 0)
         end
-        -- Bag icons + filter highlight
+        -- Bag icons + filter highlight + empty-slot indicator
         local activeFilter = WB.db.ui._filterBag
         for bag, btn in pairs(self._slots) do
             local tex
@@ -856,7 +889,16 @@ local function buildPanel()
                 tex = "Interface\\Buttons\\Button-Backpack-Up"
             else
                 local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bag) or nil
-                tex = invID and GetInventoryItemTexture("player", invID) or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"
+                local bagItemID = invID and GetInventoryItemID("player", invID)
+                tex = invID and GetInventoryItemTexture("player", invID)
+                -- Empty equippable slots get a dim placeholder instead of Blizzard's
+                -- default bag icon so the "+" mark is visible without texture competition.
+                if bag > 0 and not bagItemID then
+                    tex = nil
+                end
+                if btn._emptyMark then
+                    btn._emptyMark:SetShown(bag > 0 and not bagItemID)
+                end
             end
             btn._icon:SetTexture(tex)
             btn._hilite:SetShown(activeFilter == bag)

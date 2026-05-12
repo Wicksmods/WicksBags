@@ -1,8 +1,26 @@
 # Wick's Bags — Changelog
 
+## 0.9.0 - 2026-05-12
+
+### Interactive bag slots
+
+The bag icons in the bottom bar are now fully interactive for both the bag panel and the bank panel.
+
+**Drag to equip.** Drag any bag from your inventory grid and drop it onto an empty bag slot in the bottom bar to equip it there. Drag onto an occupied slot to swap.
+
+**Drag to unequip or reorder.** Drag a bag icon directly from the bottom bar to pick it up, then drop it into a different slot to reorder, or drop it into your inventory grid to unequip it.
+
+**Click-to-equip.** Left-clicking a slot while your cursor holds a bag equips it without needing to drag.
+
+**Empty slot cue.** Unpopulated bag slots (and purchased-but-empty bank bag slots) now show a subtle "+" mark so drop targets are obvious at a glance.
+
+Tooltips updated to reflect the drag behavior: hovering an occupied slot shows "Drag to move or unequip"; hovering an empty slot shows "Drag a bag here to equip it".
+
+All equip actions are combat-lockdown safe (disabled in combat). Works for all four carry bag slots and all seven bank bag slots.
+
 ## 0.8.1 — 2026-05-10
 
-- (edit this entry with the actual changes)
+Alt viewer title + window position polish.
 
 # Changelog
 

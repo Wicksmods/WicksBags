@@ -591,16 +591,18 @@ local function buildPanel()
     panel._buyBtn = buyBtn
 
     -- Bank bag icons (left of gold). Show only the bag slots the player
-    -- owns. Click filters the bank panel to that bank-bag's contents
-    -- (mirrors the bag panel's right-click bag-filter). Click again on
-    -- the same icon (or anywhere off-icon) to clear the filter.
+    -- owns. All 7 bank bag slots are drag sources (pick up an equipped bank
+    -- bag) and drag targets (equip a bag from cursor into this slot).
+    -- Purchased-but-empty slots show a "+" placeholder as a drop cue.
     botBar._slots = {}
     local bankSlotSize = 22
     for i = 1, NUM_BANKBAGSLOTS_LOCAL do
+        local bagContainerID = 4 + i   -- container IDs 5..11
         local btn = CreateFrame("Button", nil, botBar)
         btn:SetSize(bankSlotSize, bankSlotSize)
         btn:EnableMouse(true)
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        btn:RegisterForDrag("LeftButton")
         local icon = btn:CreateTexture(nil, "ARTWORK")
         icon:SetAllPoints(btn)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -611,32 +613,63 @@ local function buildPanel()
         hilite:SetPoint("TOPLEFT", -1, 1)
         hilite:SetPoint("BOTTOMRIGHT", 1, -1)
         hilite:Hide()
+        -- Empty-slot indicator shown when this slot is purchased but empty.
+        local emptyMark = btn:CreateFontString(nil, "OVERLAY")
+        emptyMark:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        emptyMark:SetTextColor(UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3], 0.6)
+        emptyMark:SetPoint("CENTER")
+        emptyMark:SetText("+")
+        emptyMark:Hide()
         btn._icon = icon
         btn._hilite = hilite
+        btn._emptyMark = emptyMark
         btn._index = i
-        btn._bag = 4 + i   -- container ID 5..11
+        btn._bag = bagContainerID
         btn:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(4 + i) or nil
-            if invID then GameTooltip:SetInventoryItem("player", invID) end
-            GameTooltip:AddLine(("Bank Bag %d"):format(i),
-                UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
-            GameTooltip:AddLine("Left-click: open this bag", 1, 1, 1)
-            GameTooltip:AddLine("Right-click: toggle filter (click again to clear)",
-                UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            GameTooltip:ClearLines()
+            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            local hasBag = invID and GetInventoryItemID("player", invID) ~= nil
+            if invID and hasBag then
+                GameTooltip:SetInventoryItem("player", invID)
+                GameTooltip:AddLine("Drag to move or unequip", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            else
+                GameTooltip:AddLine(("Bank Bag slot %d (empty)"):format(i), 1, 1, 1)
+                GameTooltip:AddLine("Drag a bag here to equip it", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            end
+            GameTooltip:AddLine("Right-click: toggle filter", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        -- Drag start: pick up the equipped bank bag.
+        btn:SetScript("OnDragStart", function(self)
+            if InCombatLockdown() then return end
+            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            if invID and GetInventoryItemID("player", invID) then
+                PickupBagFromSlot(invID)
+            end
+        end)
+        -- Receive a drag: equip the cursor bag into this bank bag slot.
+        btn:SetScript("OnReceiveDrag", function(self)
+            if InCombatLockdown() then return end
+            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            if invID then PutItemInBag(invID) end
+        end)
         btn:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
-                -- Toggle filter for this bank bag.
                 WB.db.ui._filterBankBag = (WB.db.ui._filterBankBag == self._bag) and nil or self._bag
                 if botBar.Refresh then botBar:Refresh() end
                 if WB.Bank and WB.Bank.Refresh then WB.Bank:Refresh() end
                 return
             end
-            -- Left-click: open the specific bank bag in Blizzard's container UI
-            -- (lets the user interact with it as its own window if desired).
+            -- Left-click with cursor item: equip it into this bank bag slot.
+            if CursorHasItem and CursorHasItem() then
+                if InCombatLockdown() then return end
+                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+                if invID then PutItemInBag(invID) end
+                return
+            end
+            -- Left-click (no cursor): open the specific bank bag.
             if InCombatLockdown() then return end
             if ToggleBag then ToggleBag(self._bag)
             elseif OpenBag then OpenBag(self._bag) end
@@ -697,9 +730,12 @@ local function buildPanel()
             local btn = self._slots[i]
             if i <= numPurchased then
                 local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(4 + i) or nil
+                local bagItemID = invID and GetInventoryItemID("player", invID)
                 local tex = invID and GetInventoryItemTexture("player", invID)
-                            or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"
+                -- Purchased but empty: clear icon texture so "+" mark shows through.
+                if not bagItemID then tex = nil end
                 btn._icon:SetTexture(tex)
+                if btn._emptyMark then btn._emptyMark:SetShown(not bagItemID) end
                 if btn._hilite then btn._hilite:SetShown(activeFilter == btn._bag) end
                 btn:ClearAllPoints()
                 btn:SetPoint("RIGHT", prev, "LEFT", -6, 0)
@@ -707,6 +743,7 @@ local function buildPanel()
                 prev = btn
             else
                 btn:Hide()
+                if btn._emptyMark then btn._emptyMark:Hide() end
             end
         end
         -- Main-bank filter icon: anchor left of the rightmost visible bag
