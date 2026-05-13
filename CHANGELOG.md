@@ -1,5 +1,9 @@
 # Wick's Bags — Changelog
 
+## 0.9.1 - 2026-05-12
+
+- Fix keyring key tooltips not appearing on mouseover (SetBagItem doesn't work for bag -2; fall back to SetHyperlink)
+
 ## 0.9.0 - 2026-05-12
 
 ### Interactive bag slots

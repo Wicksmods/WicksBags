@@ -182,7 +182,13 @@ local function buildSlot(parent, index)
     b:HookScript("OnEnter", function(self)
         if not self._bag or not self._slot then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetBagItem(self._bag, self._slot)
+        -- SetBagItem doesn't work for the keyring (-2); fall back to SetHyperlink.
+        if self._bag == KEYRING_CONTAINER then
+            local link = ns.GetContainerItemLink(self._bag, self._slot)
+            if link then GameTooltip:SetHyperlink(link) end
+        else
+            GameTooltip:SetBagItem(self._bag, self._slot)
+        end
         GameTooltip:Show()
     end)
     b:HookScript("OnLeave", function(self)
