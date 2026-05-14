@@ -158,11 +158,10 @@ local function buildSlot(parent, index)
     ilvl:SetText("")
     b._ilvlText = ilvl
 
-    -- SetScript replaces the template's OnEnter entirely so the tooltip is
-    -- only set once per hover. HookScript caused a double-draw: the template
-    -- fired first (correct tooltip), then our hook called SetOwner again,
-    -- wiping and redrawing it with stale/nil data. The hover-highlight texture
-    -- is driven by the button's mouse-over state, not by these scripts.
+    -- Silence the template's own tooltip machinery. ContainerFrameItemButtonTemplate
+    -- drives tooltips via UpdateTooltip (called from OnUpdate/OnEnter inside the
+    -- template). Nooping it stops the flicker fight; we own the tooltip entirely.
+    b.UpdateTooltip = function() end
     b:SetScript("OnEnter", function(self)
         if not self._bag or not self._slot then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

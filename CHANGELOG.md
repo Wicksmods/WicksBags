@@ -1,5 +1,9 @@
 # Wick's Bags — Changelog
 
+## 0.9.3 - 2026-05-14
+
+- Fix tooltip flicker on all bag and bank item slots. The template's internal UpdateTooltip callback was fighting our OnEnter handler every frame. Nooping UpdateTooltip gives us sole ownership of the tooltip.
+
 ## 0.9.2 - 2026-05-14
 
 - Fix bank item tooltips flickering: showed correct tooltip for half a second then switched to a generic "Vendor / Auction" display. Root cause was HookScript on OnEnter causing a double-draw -- the template fired first (correct), then our hook called SetOwner again and reset the tooltip with stale data. Switched to SetScript to own the tooltip draw exclusively.
