@@ -158,9 +158,12 @@ local function buildSlot(parent, index)
     ilvl:SetText("")
     b._ilvlText = ilvl
 
-    -- HookScript (not SetScript) — preserves the template's hover-highlight
-    -- show/hide which we'd otherwise leave stuck on the slot after mouseout.
-    b:HookScript("OnEnter", function(self)
+    -- SetScript replaces the template's OnEnter entirely so the tooltip is
+    -- only set once per hover. HookScript caused a double-draw: the template
+    -- fired first (correct tooltip), then our hook called SetOwner again,
+    -- wiping and redrawing it with stale/nil data. The hover-highlight texture
+    -- is driven by the button's mouse-over state, not by these scripts.
+    b:SetScript("OnEnter", function(self)
         if not self._bag or not self._slot then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         -- Main bank container (-1) needs SetInventoryItem; SetBagItem(-1, slot)
@@ -173,7 +176,7 @@ local function buildSlot(parent, index)
         end
         GameTooltip:Show()
     end)
-    b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- HookScript (not SetScript) — preserves Blizzard template's secure
     -- OnClick/OnReceiveDrag dispatch. Our hooks only fire for FREE tiles

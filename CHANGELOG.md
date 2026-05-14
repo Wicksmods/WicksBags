@@ -1,5 +1,9 @@
 # Wick's Bags — Changelog
 
+## 0.9.2 - 2026-05-14
+
+- Fix bank item tooltips flickering: showed correct tooltip for half a second then switched to a generic "Vendor / Auction" display. Root cause was HookScript on OnEnter causing a double-draw -- the template fired first (correct), then our hook called SetOwner again and reset the tooltip with stale data. Switched to SetScript to own the tooltip draw exclusively.
+
 ## 0.9.1 - 2026-05-12
 
 - Fix keyring key tooltips not appearing on mouseover (SetBagItem doesn't work for bag -2; fall back to SetHyperlink)

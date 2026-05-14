@@ -176,10 +176,11 @@ local function buildSlot(parent, index)
     down:SetFromAlpha(0.55); down:SetToAlpha(0); down:SetDuration(0.7); down:SetOrder(2)
     b._newPulse = pulse
 
-    -- Tooltip on hover. HookScript (not SetScript) — the template's own
-    -- OnEnter/OnLeave drives the highlight texture (shown on enter, hidden
-    -- on leave); replacing them with SetScript leaves the highlight stuck.
-    b:HookScript("OnEnter", function(self)
+    -- SetScript replaces the template's OnEnter to prevent a double-draw:
+    -- HookScript caused the template to fire first (correct tooltip) then our
+    -- hook called SetOwner again, wiping and redrawing with stale data.
+    -- OnLeave stays as HookScript (see below) for the highlight-stuck fix.
+    b:SetScript("OnEnter", function(self)
         if not self._bag or not self._slot then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         -- SetBagItem doesn't work for the keyring (-2); fall back to SetHyperlink.
