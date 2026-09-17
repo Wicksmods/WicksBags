@@ -44,9 +44,9 @@ end
 -- Font strings default to the widget's own color when none is given; the
 -- panels set most colors themselves after creation.
 function UI:NewText(parent, size, c)
+    if c then return Chrome:Text(parent, size or 11, c) end
     local f = parent:CreateFontString(nil, "OVERLAY")
     f:SetFont(Chrome.FONT, size or 11, "")
-    if c then f:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
     return f
 end
 
