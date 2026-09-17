@@ -58,6 +58,11 @@ function ns.GetItemInfoInstant(item)
     return t.itemID, t.itemType, t.itemSubType, t.equipLoc, t.icon, t.classID, t.subclassID
 end
 
+-- Forever carries the currency API and none of the TBC currency globals.
+-- Bag.lua and Options.lua key the watched-currency strip and its toggles
+-- off this one flag.
+ns.MODERN_CURRENCY = (C_CurrencyInfo and C_CurrencyInfo.GetBackpackCurrencyInfo and not GetHonorCurrency) and true or false
+
 -- ============================================================
 -- Item button template
 -- ============================================================

@@ -1,21 +1,26 @@
 -- Wick's Bags
--- UI.lua: brand chrome helpers (palette, borders, L-bracket corners).
--- Mirrors the helper block in every other Wick addon. Source of truth:
--- memory/reference_wick_brand_style.md.
+-- UI.lua: brand chrome adapter. The palette, borders and L-bracket corners
+-- come from WickCore.Chrome so every Wick product draws from one source.
+-- This file keeps the WB.UI surface the panels were written against and
+-- adds the pieces that are specific to bags: quality colors, the dim label
+-- tint, the two-part title and coin formatting.
 
 local ADDON, ns = ...
 local WB = WicksBags
+local Chrome = WickCore.Chrome
+local C = Chrome.Colors
 
 WB.UI = {}
 local UI = WB.UI
 
--- Wick brand palette (locked tokens)
-UI.C_BG          = { 0.051, 0.039, 0.078, 0.97 }
-UI.C_HEADER_BG   = { 0.090, 0.067, 0.141, 1 }
-UI.C_BORDER      = { 0.220, 0.188, 0.345, 1 }
-UI.C_GREEN       = { 0.310, 0.780, 0.471, 1 }
-UI.C_TEXT_DIM    = { 0.42,  0.35,  0.54,  1 }
-UI.C_TEXT_NORMAL = { 0.831, 0.784, 0.631, 1 }
+-- Palette tokens are references into Chrome.Colors, not copies. A palette
+-- change in WickCore reaches every bag panel without a second edit here.
+UI.C_BG          = C.voidBG
+UI.C_HEADER_BG   = C.shadow
+UI.C_BORDER      = C.border
+UI.C_GREEN       = C.fel
+UI.C_TEXT_NORMAL = C.text
+UI.C_TEXT_DIM    = { 0.42, 0.35, 0.54, 1 }   -- secondary labels, bags only
 
 -- Item-quality colors. Common and poor are muted so green/blue/purple/orange
 -- pop. Higher qualities stay at full saturation.
@@ -33,61 +38,33 @@ function UI:SetRGBA(tex, c)
 end
 
 function UI:NewTexture(parent, layer, c)
-    local t = parent:CreateTexture(nil, layer or "BACKGROUND")
-    if c then self:SetRGBA(t, c) end
-    return t
+    return Chrome:Texture(parent, layer, c)
 end
 
+-- Font strings default to the widget's own color when none is given; the
+-- panels set most colors themselves after creation.
 function UI:NewText(parent, size, c)
     local f = parent:CreateFontString(nil, "OVERLAY")
-    f:SetFont("Fonts\\FRIZQT__.TTF", size or 11, "")
+    f:SetFont(Chrome.FONT, size or 11, "")
     if c then f:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
     return f
 end
 
 function UI:AddBorder(frame, c)
-    c = c or self.C_BORDER
-    local function edge(p1, p2, w, h)
-        local t = frame:CreateTexture(nil, "BORDER")
-        t:SetColorTexture(c[1], c[2], c[3], c[4] or 1)
-        t:SetPoint(p1); t:SetPoint(p2)
-        if w then t:SetWidth(w) end
-        if h then t:SetHeight(h) end
-    end
-    edge("TOPLEFT",    "TOPRIGHT",    nil, 1)
-    edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 1)
-    edge("TOPLEFT",    "BOTTOMLEFT",  1,   nil)
-    edge("TOPRIGHT",   "BOTTOMRIGHT", 1,   nil)
+    Chrome:AddBorder(frame, c)
 end
 
-function UI:AddCornerAccents(frame, arm, thick)
-    arm = arm or 10
-    thick = thick or 2
-    local g = self.C_GREEN
-    local function brk(anchor)
-        local h = frame:CreateTexture(nil, "OVERLAY")
-        h:SetColorTexture(g[1], g[2], g[3], 1)
-        h:SetPoint(anchor); h:SetSize(arm, thick)
-        local v = frame:CreateTexture(nil, "OVERLAY")
-        v:SetColorTexture(g[1], g[2], g[3], 1)
-        v:SetPoint(anchor); v:SetSize(thick, arm)
-    end
-    brk("TOPLEFT"); brk("TOPRIGHT"); brk("BOTTOMLEFT"); brk("BOTTOMRIGHT")
+function UI:AddCornerAccents(frame)
+    Chrome:AddBrackets(frame)
 end
 
 -- Two-tone "Wick's <Title>" header text. "Wick's" off-white, descriptor green.
 function UI:AddTitleText(parent, descriptor, anchor, x, y)
-    local off = self.C_TEXT_NORMAL
-    local g   = self.C_GREEN
-    local left = parent:CreateFontString(nil, "OVERLAY")
-    left:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
-    left:SetTextColor(off[1], off[2], off[3], 1)
+    local left = Chrome:Text(parent, 13, C.text)
     left:SetPoint(anchor or "LEFT", x or 8, y or 0)
     left:SetText("Wick's")
 
-    local right = parent:CreateFontString(nil, "OVERLAY")
-    right:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
-    right:SetTextColor(g[1], g[2], g[3], 1)
+    local right = Chrome:Text(parent, 13, C.fel)
     right:SetPoint("LEFT", left, "RIGHT", 4, 0)
     right:SetText(descriptor or "Bags")
 

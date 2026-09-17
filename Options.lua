@@ -968,42 +968,41 @@ local function buildGeneralTab(body)
         makeCheckbox(body, "Show bottom bar",
             function() return WB.db.options.showBagBar end,
             function(v) WB.db.options.showBagBar = v end))
-    addPair(
+    -- The TBC currency toggles read globals Forever no longer has. On a
+    -- client with the currency API the watched-currency list replaces them
+    -- and a single "Show currencies" box stands in.
+    local boxes = {
         makeCheckbox(body, "Highlight new items",
             function() return WB.db.options.showHighlights end,
             function(v) WB.db.options.showHighlights = v end),
-        makeCheckbox(body, "Honor Points",
-            function() return WB.db.options.showHonor end,
-            function(v) WB.db.options.showHonor = v end))
-    addPair(
-        makeCheckbox(body, "Arena Points",
-            function() return WB.db.options.showArena end,
-            function(v) WB.db.options.showArena = v end),
-        makeCheckbox(body, "Marks of Honor",
-            function() return WB.db.options.showMarks end,
-            function(v) WB.db.options.showMarks = v end))
-    addPair(
-        makeCheckbox(body, "Badges",
-            function() return WB.db.options.showBadges end,
-            function(v) WB.db.options.showBadges = v end),
-        makeCheckbox(body, "Spirit Shards",
-            function() return WB.db.options.showShards end,
-            function(v) WB.db.options.showShards = v end))
-    addPair(
-        makeCheckbox(body, "Rep tokens",
-            function() return WB.db.options.showRep end,
-            function(v) WB.db.options.showRep = v end),
-        makeCheckbox(body, "Use ItemRack sets",
-            function() return WB.db.options.useItemRack ~= false end,
-            function(v) WB.db.options.useItemRack = v end))
-
-    addPair(
-        makeCheckbox(body, "Show currencies",
+    }
+    if ns.MODERN_CURRENCY then
+        boxes[#boxes + 1] = makeCheckbox(body, "Show currencies",
             function() return WB.db.options.showCurrencies ~= false end,
-            function(v) WB.db.options.showCurrencies = v end),
-        makeCheckbox(body, "Alt counts in tooltips",
-            function() return WB.db.options.altTooltips ~= false end,
-            function(v) WB.db.options.altTooltips = v end))
+            function(v) WB.db.options.showCurrencies = v end)
+    else
+        local legacy = {
+            { "Honor Points",   "showHonor"  },
+            { "Arena Points",   "showArena"  },
+            { "Marks of Honor", "showMarks"  },
+            { "Badges",         "showBadges" },
+            { "Spirit Shards",  "showShards" },
+            { "Rep tokens",     "showRep"    },
+        }
+        for _, def in ipairs(legacy) do
+            local key = def[2]
+            boxes[#boxes + 1] = makeCheckbox(body, def[1],
+                function() return WB.db.options[key] end,
+                function(v) WB.db.options[key] = v end)
+        end
+    end
+    boxes[#boxes + 1] = makeCheckbox(body, "Use ItemRack sets",
+        function() return WB.db.options.useItemRack ~= false end,
+        function(v) WB.db.options.useItemRack = v end)
+    boxes[#boxes + 1] = makeCheckbox(body, "Alt counts in tooltips",
+        function() return WB.db.options.altTooltips ~= false end,
+        function(v) WB.db.options.altTooltips = v end)
+    for i = 1, #boxes, 2 do addPair(boxes[i], boxes[i + 1]) end
 
     local markBtn = makeButton(body, "Mark all items seen",
         function() if WB.Bag and WB.Bag.MarkAllSeen then WB.Bag:MarkAllSeen() end end)

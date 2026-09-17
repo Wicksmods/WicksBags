@@ -1094,7 +1094,7 @@ local function buildPanel()
     -- Forever and retail expose the player's watched currencies instead of
     -- fixed PvP/PvE token functions. Detect by the presence of the modern
     -- API and the absence of the TBC honor function.
-    local MODERN_CURRENCY = (C_CurrencyInfo and C_CurrencyInfo.GetBackpackCurrencyInfo and not GetHonorCurrency) and true or false
+    local MODERN_CURRENCY = ns.MODERN_CURRENCY
     local CURRENCIES
     if MODERN_CURRENCY then
         CURRENCIES = {}
