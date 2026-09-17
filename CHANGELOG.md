@@ -1,5 +1,27 @@
 # Wick's Bags — Changelog
 
+## 1.0.0 - 2026-09-17 (Forever)
+
+### Ported to World of Warcraft: Forever on WickCore
+
+Forever runs retail's engine at level 60 with Midnight's addon rules. The bag
+and container globals this addon used are gone there, and the bank is a
+different thing entirely. This release moves everything onto WickCore and
+keeps the module code intact behind its dialect shim.
+
+- Requires WickCore. Interface 16001.
+- Saved variables move into a WickCore profile. Existing settings migrate on
+  first load; alt snapshots fold into the account-wide store.
+- Bank tabs. Forever has no main bank window and no bank bag slots; the bank is
+  purchasable tabs. The bank panel shows every purchased tab as one categorized
+  view, filters per tab, and the buy button purchases the next tab at its price.
+- One-click sort for bags (header) and bank (bottom bar).
+- Alt counts in item tooltips, drawn from the same snapshots the alt viewer shows.
+- Watched currencies in the bottom bar replace the TBC honor, arena and token tiles.
+- Keyring container resolved from the client instead of hard-coded.
+- New slash commands: /wbags options, /wbags alts, /wbags sort.
+- Minimap launcher and a page under Options, Wick's Mods.
+
 ## 0.9.3 - 2026-05-14
 
 - Fix tooltip flicker on all bag and bank item slots. The template's internal UpdateTooltip callback was fighting our OnEnter handler every frame. Nooping UpdateTooltip gives us sole ownership of the tooltip.

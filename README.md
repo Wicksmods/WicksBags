@@ -2,9 +2,9 @@
 
 # Wick's Bags
 
-> Categorized bag panel for TBC Classic. Auto-categorize, search, gold display, custom rules, pluggable category sources.
+> Categorized bags and bank for World of Warcraft: Forever. Auto-categorize, search, one-click sort, alt inventory and tooltips, custom rules.
 
-Part of the **[Wick suite](https://github.com/Wicksmods/WickSuite)**: precision addons built around a single fel-green-on-deep-purple aesthetic.
+Part of the **[Wick suite](https://github.com/Wicksmods/WickSuite)**: precision addons built around a single fel-green-on-deep-purple aesthetic. This branch (`forever`) is the Forever build on [WickCore](https://github.com/Wicksmods/WickCore). The TBC Anniversary build lives on `main`.
 
 <!-- wick:suite-table:start -->
 | Addon | GitHub | CurseForge |
@@ -30,40 +30,48 @@ Part of the **[Wick suite](https://github.com/Wicksmods/WickSuite)**: precision 
 
 ## Features
 
-- **Single window** replacing the bag clutter view.
-- **Auto-categorize** by item type: Equipment, Consumable, Trade Goods, Quest, Recipe, Gem, Container, Projectile, Quiver, Key, Junk, Misc.
-- **Quality-color borders** so rares and epics stand out at a glance.
-- **Live search** across all bags.
-- **Gold display** in the header.
-- **Cooldown spirals** on items with active cooldowns (potions, trinkets).
-- **Use-on-click** via secure action button (left-click an item to use it).
-- **Pluggable category sources** so an external addon can supply category data (TSM groups in v0.2, outfit addon in v0.3, etc.).
-- **Wick chrome.** Void background, fel-green L-bracket corners, two-tone "Wick's" title, slim 28px header.
+- **One window** for bags, and one for the bank, replacing the bag clutter view.
+- **Auto-categorize** by item type: Equipment, Potion, Elixir, Flask, Food, Cloth, Leather, Herb, Enchanting, Quest, Recipe, Key, Junk and more, grouped under parent headers.
+- **Custom rules** by item, by class and subclass, or by name pattern, plus your own categories.
+- **Live search** across bags and bank.
+- **One-click sort** for bags and bank, then the categories lay back out.
+- **Bank tabs.** Forever's bank is purchasable tabs; the panel shows them as one categorized view, with a filter per tab and the next tab's price on the buy button.
+- **Alt inventory viewer** with snapshots of every character's bags and bank, and **alt counts in item tooltips** so you know which character has the mats.
+- **Watched currencies** in the bottom bar.
+- **Quality borders, item level, new-item highlights, cooldown spirals, use-on-click.**
+- **Profiles** keyed by character, spec, class or game mode, with export and import strings, through WickCore.
+- **Wick chrome.** Void background, fel-green L-bracket corners, two-tone "Wick's" title.
 
 ## Install
 
-- **Manual:** download the latest ZIP from [Releases](https://github.com/Wicksmods/WicksBags/releases) and extract the `WicksBags` folder into `World of Warcraft\_classic_\Interface\AddOns\`.
+Requires **[WickCore](https://github.com/Wicksmods/WickCore)**.
+
+- **Manual:** download the latest ZIP from [Releases](https://github.com/Wicksmods/WicksBags/releases) and extract the `WicksBags` folder into the Forever client's `Interface\AddOns\` (the beta installs to `World of Warcraft\_classic_beta_\`). Do the same for `WickCore`.
 
 ## Usage
 
 ```
-/wb
+/wbags
 ```
 
-Toggles the main panel. Bind a key in *Esc to Key Bindings to AddOns to Wick's Bags* if you prefer.
+Toggles the main panel. Bind a key in *Esc, Key Bindings, AddOns, Wick's Bags* if you prefer. The Wick minimap button and the "Wick's Mods" entry in Options also open it.
 
 | Command | Effect |
 |---|---|
-| `/wb` | Toggle the panel |
-| `/wb show` | Show |
-| `/wb hide` | Hide |
-| `/wb reset` | Reset position to center |
+| `/wbags` | Toggle the panel |
+| `/wbags options` | Open the options window |
+| `/wbags alts` | Open the alt inventory viewer |
+| `/wbags sort` | One-click sort |
+| `/wbags show` / `hide` | Show or hide |
+| `/wbags reset` | Reset position to center |
+| `/wbags autoopen on|off` | Auto-open at mailbox, vendor, bank |
+
+`/wicksbags` and `/wb` are aliases.
 
 ## Compatibility
 
-- TBC Classic Anniversary (2.5.5, Interface 20505)
-- Pure Lua, no library dependencies in v0.1
-- Works alongside default Blizzard bags (does not hide them yet; that is a v0.2 option)
+- World of Warcraft: Forever, 1.60.x, Interface 16001. Requires WickCore.
+- The same code runs on TBC Anniversary through WickCore's dialect shim, but the supported TBC build is the `main` branch.
 
 ## License
 

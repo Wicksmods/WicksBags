@@ -50,7 +50,7 @@ end
 -- ============================================================
 -- Snapshot helpers
 -- ============================================================
-local KEYRING = -2
+local KEYRING = (Enum and Enum.BagIndex and Enum.BagIndex.Keyring) or -2
 
 local function snapshotBagSlots()
     local out = {}
@@ -78,9 +78,8 @@ end
 
 local function snapshotBankSlots()
     local out = {}
-    local BANK_IDS = { -1 }
-    local numBankBags = NUM_BANKBAGSLOTS or 7
-    for i = 1, numBankBags do BANK_IDS[#BANK_IDS + 1] = 4 + i end
+    -- Bank.lua owns the container model (tabs on Forever, bags on TBC).
+    local BANK_IDS = (WB.Bank and WB.Bank.ContainerIDs) and WB.Bank.ContainerIDs() or { -1 }
     for _, bag in ipairs(BANK_IDS) do
         local n = ns.GetContainerNumSlots(bag) or 0
         for slot = 1, n do
@@ -1005,3 +1004,58 @@ end
 WB:On("BANK_DIRTY",   scheduleBankSnapshot)
 -- Also snapshot on open (after 1s delay for slot data to fully populate).
 WB:On("BANK_OPENED",  function() C_Timer.After(1.0, scheduleBankSnapshot) end)
+
+-- ============================================================
+-- Alt counts in item tooltips
+-- ============================================================
+-- Reads the same snapshots the viewer shows. Forever uses the tooltip data
+-- processor; TBC falls back to the OnTooltipSetItem script.
+local function altCountsFor(itemID)
+    local rows = {}
+    local me = charKey()
+    for key, snap in pairs(WB.altDB or {}) do
+        if key ~= me and type(snap) == "table" then
+            local bags, bank = 0, 0
+            for _, it in ipairs(snap.bags or {}) do
+                if it.itemID == itemID then bags = bags + (it.count or 1) end
+            end
+            for _, it in ipairs(snap.bank or {}) do
+                if it.itemID == itemID then bank = bank + (it.count or 1) end
+            end
+            if bags + bank > 0 then
+                rows[#rows + 1] = { name = key:match("%-(.+)$") or key, bags = bags, bank = bank }
+            end
+        end
+    end
+    table.sort(rows, function(a, b) return a.name < b.name end)
+    return rows
+end
+AV.AltCountsFor = altCountsFor
+
+local function decorateTooltip(tooltip, itemID)
+    if not itemID or not WB.db.options or WB.db.options.altTooltips == false then return end
+    local rows = altCountsFor(itemID)
+    if #rows == 0 then return end
+    tooltip:AddLine(" ")
+    for _, r in ipairs(rows) do
+        local parts = {}
+        if r.bags > 0 then parts[#parts + 1] = r.bags .. " in bags" end
+        if r.bank > 0 then parts[#parts + 1] = r.bank .. " in bank" end
+        tooltip:AddDoubleLine(r.name, table.concat(parts, ", "),
+            UI.C_TEXT_NORMAL[1], UI.C_TEXT_NORMAL[2], UI.C_TEXT_NORMAL[3], 0.55, 0.50, 0.42)
+    end
+end
+AV.DecorateTooltip = decorateTooltip
+
+if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+        if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
+        decorateTooltip(tooltip, data and data.id)
+    end)
+elseif GameTooltip and GameTooltip.HookScript then
+    GameTooltip:HookScript("OnTooltipSetItem", function(tt)
+        local _, link = tt:GetItem()
+        local id = link and tonumber(link:match("item:(%d+)"))
+        decorateTooltip(tt, id)
+    end)
+end

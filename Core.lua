@@ -1,146 +1,131 @@
 -- Wick's Bags
--- Core.lua: namespace, saved variables, event dispatch, slash command.
+-- Core.lua: WickCore addon object, saved variables, event dispatch, slash command.
+--
+-- Forever port. Every client call routes through WickCore's dialect shim, so
+-- the same module code runs on Forever (C_Item / C_Container / C_UnitAuras)
+-- and on TBC Anniversary (legacy globals). Modules destructure tuples, so the
+-- shim's tables are unwrapped here once and exposed on ns.* exactly as before.
 
 local ADDON, ns = ...
 
+local Core = WickCore
+assert(Core, "Wick's Bags requires WickCore. Enable the WickCore addon.")
+local D = Core.Dialect
+
 -- ============================================================
--- TBC Anniversary 2.5.5 namespaced calls
+-- Client API, resolved once through the dialect shim
 -- ============================================================
--- Resolve once at load with fallback to legacy globals so older clients still work.
-ns.GetNumAddOns       = (C_AddOns   and C_AddOns.GetNumAddOns)            or GetNumAddOns
-ns.GetAddOnInfo       = (C_AddOns   and C_AddOns.GetAddOnInfo)            or GetAddOnInfo
-ns.IsAddOnLoaded      = (C_AddOns   and C_AddOns.IsAddOnLoaded)           or IsAddOnLoaded
-ns.LoadAddOn          = (C_AddOns   and C_AddOns.LoadAddOn)               or LoadAddOn
-ns.GetAddOnMetadata   = (C_AddOns   and C_AddOns.GetAddOnMetadata)        or GetAddOnMetadata
-ns.GetItemCooldown    = (C_Container and C_Container.GetItemCooldown)     or GetItemCooldown
-ns.GetContainerNumSlots       = (C_Container and C_Container.GetContainerNumSlots)       or GetContainerNumSlots
-ns.GetContainerItemLink       = (C_Container and C_Container.GetContainerItemLink)       or GetContainerItemLink
-ns.GetContainerItemID         = (C_Container and C_Container.GetContainerItemID)         or GetContainerItemID
-ns.PickupContainerItem        = (C_Container and C_Container.PickupContainerItem)        or PickupContainerItem
-ns.UseContainerItem           = (C_Container and C_Container.UseContainerItem)           or UseContainerItem
-ns.ContainerIDToInventoryID   = (C_Container and C_Container.ContainerIDToInventoryID)   or ContainerIDToInventoryID
--- C_Container.GetContainerItemInfo returns a TABLE in TBC Anniversary 2.5.5.
--- Legacy GetContainerItemInfo returned a multi-value tuple. Wrap to expose
--- a stable multi-return regardless of which form is available.
-ns.GetContainerItemInfo = function(bag, slot)
-    if C_Container and C_Container.GetContainerItemInfo then
-        local info = C_Container.GetContainerItemInfo(bag, slot)
-        if info then
-            return info.iconFileID, info.stackCount, info.isLocked, info.quality,
-                   info.isReadable, info.hasLoot, info.hyperlink,
-                   info.isFiltered, info.hasNoValue, info.itemID, info.isBound
-        end
-        return nil
-    end
-    if GetContainerItemInfo then
-        return GetContainerItemInfo(bag, slot)
-    end
-    return nil
+ns.GetNumAddOns     = (C_AddOns and C_AddOns.GetNumAddOns)     or GetNumAddOns
+ns.GetAddOnInfo     = (C_AddOns and C_AddOns.GetAddOnInfo)     or GetAddOnInfo
+ns.IsAddOnLoaded    = (C_AddOns and C_AddOns.IsAddOnLoaded)    or IsAddOnLoaded
+ns.LoadAddOn        = (C_AddOns and C_AddOns.LoadAddOn)        or LoadAddOn
+ns.GetAddOnMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+
+ns.GetItemCooldown = (C_Item and C_Item.GetItemCooldown)
+    or (C_Container and C_Container.GetItemCooldown)
+    or GetItemCooldown
+
+ns.GetContainerNumSlots     = D.GetContainerNumSlots
+ns.GetContainerItemLink     = D.GetContainerItemLink
+ns.GetContainerItemID       = D.GetContainerItemID
+ns.PickupContainerItem      = D.PickupContainerItem
+ns.UseContainerItem         = D.UseContainerItem
+ns.ContainerIDToInventoryID = (C_Container and C_Container.ContainerIDToInventoryID) or ContainerIDToInventoryID
+ns.GetItemCount             = D.GetItemCount
+ns.GetItemQualityColor      = D.GetItemQualityColor
+
+-- Tuple form of the container slot query, matching the legacy return order.
+function ns.GetContainerItemInfo(bag, slot)
+    local t = D.GetContainerItemInfo(bag, slot)
+    if not t then return nil end
+    return t.iconFileID, t.stackCount, t.isLocked, t.quality, t.isReadable, t.hasLoot,
+           t.hyperlink, t.isFiltered, t.hasNoValue, t.itemID, t.isBound
+end
+
+-- Tuple form of GetItemInfo, legacy return order (bindType is the 14th).
+function ns.GetItemInfo(item)
+    local t = D.GetItemInfo(item)
+    if not t then return nil end
+    return t.name, t.link, t.quality, t.itemLevel, t.minLevel, t.itemType, t.itemSubType,
+           t.stackCount, t.equipLoc, t.icon, t.sellPrice, t.classID, t.subclassID,
+           t.bindType, t.expansionID, t.setID, t.isCraftingReagent
+end
+
+-- Tuple form of GetItemInfoInstant: itemID, type, subType, equipLoc, icon, classID, subclassID.
+function ns.GetItemInfoInstant(item)
+    local t = D.GetItemInfoInstant(item)
+    if not t then return nil end
+    return t.itemID, t.itemType, t.itemSubType, t.equipLoc, t.icon, t.classID, t.subclassID
 end
 
 -- ============================================================
--- Saved variables: defaults
+-- Saved variables
 -- ============================================================
-WicksBagsDB = WicksBagsDB or {}
-local DB_DEFAULTS = {
-    -- All UI state lives nested under `ui`. New scalar keys added by
-    -- applyDefaults DO persist when nested (proof: the old code's `bx`/
-    -- `by`/`w` writes are still in the saved file). Top-level scalar
-    -- additions to WicksBagsDB do NOT persist on this build.
-    ui = {
-        hidden   = true,
-    },
-    -- Panel positions stored as flat keys inside each pos table.
-    -- These tables are in DB_DEFAULTS so WoW tracks them from first load;
-    -- snapPosition() mutates keys in-place (proven pattern for persistence).
+-- Everything a player configures lives in the profile so WickCore can key it
+-- by character, spec or game mode and export it as a string. Alt snapshots
+-- are account-wide and live in global.
+local PROFILE_DEFAULTS = {
+    ui = { hidden = true },
     bagPos  = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
     bankPos = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
     avPos   = { posPoint = false, posRel = false, posX = 0, posY = 0, panelW = 0 },
     options = {
-        showJunk        = true,
-        showHighlights  = true,
-        sortMode        = "quality",   -- "quality" | "name" | "quantity"
-        qualityMin      = 0,           -- 0=show all, 1=Common+, 2=Uncommon+, 3=Rare+, 4=Epic+
-        showSearch      = true,
-        showBagBar      = true,
-        showHonor       = true,
-        showArena       = true,
-        showMarks       = true,        -- all four BG Marks of Honor
-        showBadges      = true,        -- Badge of Justice + Apexis tokens
-        showShards      = true,        -- Spirit Shard
-        showRep         = true,        -- faction commendations / tokens
-        borderIntensity = 1.0,         -- 0.0 (off) -> 1.0 (full); scales ALL quality-color borders uniformly
-        showItemLevel   = true,        -- top-left ilvl text on equipment slots
-        slotScale       = 1.0,         -- 0.8 .. 1.5 multiplier on slot size
-        useItemRack     = true,        -- when ItemRack is loaded, bucket items by set name
-        hideDefaultBank = true,        -- suppress Blizzard's BankFrame; show only Wick's Bank
-        suppressAutoBags = true,       -- close Blizzard's default bag UI when it auto-opens at bank/vendor
-        autoOpenBags = true,           -- auto-open Wick's Bags at mailbox/vendor/bank/AH/tradeskill
-        activeSourceId  = "auto",
+        showJunk         = true,
+        showHighlights   = true,
+        sortMode         = "quality",   -- "quality" | "name" | "quantity"
+        qualityMin       = 0,
+        showSearch       = true,
+        showBagBar       = true,
+        showCurrencies   = true,        -- Forever: the player's watched currencies
+        altTooltips      = true,        -- alt bag/bank counts in item tooltips
+        -- TBC-only currency groups; ignored on Forever where currencies are watched tokens.
+        showHonor        = true,
+        showArena        = true,
+        showMarks        = true,
+        showBadges       = true,
+        showShards       = true,
+        showRep          = true,
+        borderIntensity  = 1.0,
+        showItemLevel    = true,
+        slotScale        = 1.0,
+        useItemRack      = true,
+        hideDefaultBank  = true,
+        suppressAutoBags = true,
+        autoOpenBags     = true,
+        hideKeyring      = false,
+        activeSourceId   = "auto",
     },
-    -- User-defined category overrides. Editable directly in saved variables;
-    -- a UI for managing these lands in v0.4. Resolution order in Categories.lua:
-    -- byItemId (exact) -> patterns (substring on name) -> auto -> Misc.
     customRules = {
-        byItemId = {},      -- [itemID] = "My Custom Category"
-        patterns = {},      -- ordered list: { { match = "Mageweave", category = "Mageweave Set" }, ... }
+        byItemId = {},
+        byClass  = {},
+        patterns = {},
     },
+    userCats = {},
 }
 
-local function applyDefaults(target, defaults)
-    for k, v in pairs(defaults) do
-        if type(v) == "table" then
-            if type(target[k]) ~= "table" then target[k] = {} end
-            applyDefaults(target[k], v)
-        elseif target[k] == nil then
-            target[k] = v
-        end
-    end
-end
-
--- IMPORTANT: WoW's TBC Anniversary build loads SavedVariables AFTER addon
--- file-scope code runs (proven via the DEBUG trace — bagPos was nil at
--- file-scope but populated by PLAYER_LOGIN time). So we cannot apply
--- defaults at file-scope; we'd be applying them to a fresh empty table
--- that gets replaced when WoW loads the file. Defer to ADDON_LOADED.
-local function initSavedVars()
-    WicksBagsDB  = WicksBagsDB  or {}
-    WicksBagsAlts = WicksBagsAlts or {}
-    -- Migrate pre-split altSnapshots from WicksBagsDB to WicksBagsAlts.
-    if WicksBagsDB.altSnapshots and next(WicksBagsDB.altSnapshots) then
-        for key, snap in pairs(WicksBagsDB.altSnapshots) do
-            if not WicksBagsAlts[key] then WicksBagsAlts[key] = snap end
-        end
-        WicksBagsDB.altSnapshots = nil
-    end
-    applyDefaults(WicksBagsDB, DB_DEFAULTS)
-    -- Rebind WB.db so any later function calls hit the loaded global.
-    if WicksBags then
-        WicksBags.db    = WicksBagsDB
-        WicksBags.altDB = WicksBagsAlts
-    end
-end
-
-WicksBagsCharDB = WicksBagsCharDB or { version = 1 }
+local A = Core:NewAddon("WicksBags", {
+    title    = "Wick's Bags",
+    version  = "1.0.0",
+    savedVar = "WicksBagsDB",
+    defaults = {
+        profile = PROFILE_DEFAULTS,
+        global  = { alts = {} },
+    },
+})
 
 -- ============================================================
--- Namespace
+-- Namespace (module bus is unchanged from the TBC build)
 -- ============================================================
 WicksBags = WicksBags or {}
 local WB = WicksBags
 ns.WB = WB
 WB.ADDON = ADDON
--- WB.db / WB.altDB are set by initSavedVars() on ADDON_LOADED, after WoW
--- actually loads the saved file. Setting them here at file-scope would
--- cache a reference to a fresh-empty table that gets replaced when the
--- file loads, leaving WB.db stale.
-WB.db    = WicksBagsDB   or {}    -- placeholder; rebound on ADDON_LOADED
-WB.altDB = WicksBagsAlts or {}    -- placeholder; rebound on ADDON_LOADED
-WB.charDB = WicksBagsCharDB or { version = 1 }
+WB.A = A
+-- Rebound in OnInitialize once WickCore has the saved variables ready.
+WB.db     = {}
+WB.altDB  = {}
+WB.charDB = {}
 
--- ============================================================
--- Pub/sub event bus (internal events between modules)
--- ============================================================
 WB._listeners = {}
 function WB:On(event, fn)
     self._listeners[event] = self._listeners[event] or {}
@@ -151,20 +136,84 @@ function WB:Emit(event, ...)
     if not list then return end
     for _, fn in ipairs(list) do
         local ok, err = pcall(fn, ...)
-        if not ok then
-            print(("|cff4FC778Wick's Bags|r error in %s: %s"):format(event, tostring(err)))
-        end
+        if not ok then A:Print(("error in %s: %s"):format(event, tostring(err))) end
     end
 end
 
 -- ============================================================
--- WoW event frame
+-- Lifecycle
+-- ============================================================
+function A:OnInitialize()
+    local sv = WicksBagsDB
+
+    -- Migrate the pre-WickCore layout: ui/options/... sat at the top level of
+    -- WicksBagsDB. Move them into the profile once.
+    if type(sv.options) == "table" and not sv._migratedToProfile then
+        for _, k in ipairs({ "ui", "bagPos", "bankPos", "avPos", "options", "customRules", "userCats" }) do
+            if type(sv[k]) == "table" then
+                self.db.profile[k] = sv[k]
+                sv[k] = nil
+            end
+        end
+        Core.applyDefaults(self.db.profile, PROFILE_DEFAULTS)
+        sv._migratedToProfile = true
+    end
+
+    -- Alt snapshots used to live in their own WicksBagsAlts file.
+    if type(WicksBagsAlts) == "table" and next(WicksBagsAlts) then
+        for key, snap in pairs(WicksBagsAlts) do
+            if not self.db.global.alts[key] then self.db.global.alts[key] = snap end
+        end
+        WicksBagsAlts = {}
+    end
+
+    WB.db     = self.db.profile
+    WB.altDB  = self.db.global.alts
+    WB.charDB = self.db.char
+
+    self.db:On("OnProfileChanged", function()
+        WB.db = self.db.profile
+        WB:Emit("BAGS_DIRTY")
+        WB:Emit("BANK_DIRTY")
+        if WB.Bag and WB.Bag.ApplyOptionsUI then WB.Bag:ApplyOptionsUI() end
+    end)
+end
+
+function A:OnEnable()
+    WB:Emit("LOGIN")
+    self:Print("loaded. /wbags to toggle.")
+
+    self:RegisterLauncher({
+        onClick = function(_, button)
+            if button == "RightButton" then
+                if WB.Options then WB.Options:Toggle() end
+            elseif WB.Bag then
+                WB.Bag:Toggle()
+            end
+        end,
+        tooltip = function(tt)
+            tt:AddLine(Core.Chrome:TitleMarkup("Wick's Bags"))
+            tt:AddLine("Left-click: toggle bags   Right-click: options", 0.5, 0.5, 0.5)
+        end,
+    })
+
+    self:RegisterOptions(function(page, addon)
+        local O = Core.Options
+        local y = O:Heading(page, "Wick's Bags", 0)
+        y = O:Note(page, "Bag options live in the panel's own window: the cog icon, or /wbags options.", y)
+        y = O:Button(page, "Open bag options", function()
+            if WB.Options then WB.Options:Toggle() end
+        end, y, 140)
+        y = O:ProfileSection(page, addon, y - 8)
+    end)
+end
+
+-- ============================================================
+-- Game events
 -- ============================================================
 local f = CreateFrame("Frame")
 WB.eventFrame = f
 local EVENTS = {
-    "ADDON_LOADED",
-    "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
     "BAG_UPDATE",
     "BAG_UPDATE_DELAYED",
@@ -177,6 +226,8 @@ local EVENTS = {
     "BANKFRAME_CLOSED",
     "PLAYERBANKSLOTS_CHANGED",
     "PLAYERBANKBAGSLOTS_CHANGED",
+    "BANK_TABS_CHANGED",          -- Forever: tab purchased or renamed
+    "CURRENCY_DISPLAY_UPDATE",    -- Forever: watched currencies changed
     "MERCHANT_SHOW",
     "MERCHANT_CLOSED",
     "MAIL_SHOW",
@@ -187,24 +238,23 @@ local EVENTS = {
     "TRADE_SKILL_CLOSE",
     "PLAYER_LOGOUT",
 }
+for _, e in ipairs(EVENTS) do
+    pcall(f.RegisterEvent, f, e)
+end
 
--- Track whether we auto-opened the bag panel — used to avoid closing
--- bags the user opened manually before walking up to a mailbox/vendor.
 local autoOpenedBag = false
 
 local function suppressBlizzBags()
-    if WB.db and WB.db.options and WB.db.options.suppressAutoBags == false then return end
-    -- Schedule on a tick so we run after Blizzard's own auto-open.
+    if WB.db.options and WB.db.options.suppressAutoBags == false then return end
     C_Timer.After(0.05, function()
         if CloseAllBags then CloseAllBags() end
     end)
 end
 
 local function autoOpenBag()
-    if not WB.db or not WB.db.options then return end
-    if WB.db.options.autoOpenBags == false then return end
+    if not WB.db.options or WB.db.options.autoOpenBags == false then return end
     if not WB.Bag then return end
-    if not WB.db.ui.hidden then return end  -- already open; user opened it, don't track
+    if not WB.db.ui.hidden then return end
     autoOpenedBag = true
     WB.Bag:Show()
 end
@@ -214,19 +264,9 @@ local function autoCloseBag()
     autoOpenedBag = false
     if WB.Bag and WB.Bag.Hide then WB.Bag:Hide() end
 end
-for _, e in ipairs(EVENTS) do
-    pcall(f.RegisterEvent, f, e)
-end
 
--- BAG_UPDATE fires per-bag and many times in a row. Coalesce via a short
--- timer that fires at most every 0.05s. BAG_UPDATE_DELAYED is Blizzard's
--- own coalesced event, but it doesn't always fire. Use both.
---
--- Layout is suppressed while the cursor holds an item. Moving an item
--- fires BAG_UPDATE immediately, but re-sorting the panel mid-drag shifts
--- all the slot positions — the next click lands on whatever shuffled in.
--- Instead we re-defer in 0.1s increments until the cursor is free, then
--- emit one final BAGS_DIRTY so counts/locks still update promptly.
+-- BAG_UPDATE fires per bag, many times in a row. Coalesce, and hold the
+-- layout while the cursor carries an item so slots do not shuffle mid-drag.
 local refreshDirty = false
 local function scheduleRefresh()
     if refreshDirty then return end
@@ -253,32 +293,16 @@ local function scheduleBankRefresh()
 end
 
 f:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local arg1 = ...
-        if arg1 == ADDON then
-            -- Saved variables are now loaded. Apply defaults, run
-            -- migrations, and (re)bind WB.db / WB.altDB to the loaded
-            -- globals. This is the canonical "saved vars ready" event
-            -- on this build; doing it earlier (file-scope) misses the
-            -- file content entirely.
-            initSavedVars()
-        end
-    elseif event == "PLAYER_LOGIN" then
-        WB:Emit("LOGIN")
-        print("|cff4FC778Wick's Bags|r loaded. /wbags to toggle.")
-    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "ITEM_LOCK_CHANGED" then
+    if event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "ITEM_LOCK_CHANGED" then
         scheduleRefresh()
-        -- ITEM_LOCK_CHANGED also fires on bank slots; nudge bank too
         if event == "ITEM_LOCK_CHANGED" then scheduleBankRefresh() end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
-        -- Bag slots are equipment slots — equipping/unequipping a bag fires
-        -- this event. Refresh both panels so the bag-bar icons update.
         scheduleRefresh()
         scheduleBankRefresh()
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         scheduleRefresh()
         scheduleBankRefresh()
-    elseif event == "PLAYER_MONEY" then
+    elseif event == "PLAYER_MONEY" or event == "CURRENCY_DISPLAY_UPDATE" then
         WB:Emit("MONEY_CHANGED")
     elseif event == "BAG_UPDATE_COOLDOWN" then
         WB:Emit("COOLDOWN_CHANGED")
@@ -289,29 +313,18 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "BANKFRAME_CLOSED" then
         WB:Emit("BANK_CLOSED")
         autoCloseBag()
-    elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" then
+    elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" or event == "BANK_TABS_CHANGED" then
         scheduleBankRefresh()
-    elseif event == "MERCHANT_SHOW"
-        or event == "MAIL_SHOW"
-        or event == "AUCTION_HOUSE_SHOW"
-        or event == "TRADE_SKILL_SHOW" then
+    elseif event == "MERCHANT_SHOW" or event == "MAIL_SHOW"
+        or event == "AUCTION_HOUSE_SHOW" or event == "TRADE_SKILL_SHOW" then
         suppressBlizzBags()
         autoOpenBag()
-    elseif event == "MERCHANT_CLOSED"
-        or event == "MAIL_CLOSED"
-        or event == "AUCTION_HOUSE_CLOSED"
-        or event == "TRADE_SKILL_CLOSE" then
+    elseif event == "MERCHANT_CLOSED" or event == "MAIL_CLOSED"
+        or event == "AUCTION_HOUSE_CLOSED" or event == "TRADE_SKILL_CLOSE" then
         autoCloseBag()
     elseif event == "PLAYER_LOGOUT" then
-        -- Snap all panel positions before the game serializes SavedVariables.
-        if WB.Bag and WB.Bag.panel and WB.Bag.panel._snapPosition then
-            WB.Bag.panel._snapPosition()
-        end
-        if WB.Bank and WB.Bank.panel and WB.Bank.panel._snapPosition then
-            WB.Bank.panel._snapPosition()
-        end
-        if WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel._snapPosition then
-            WB.AltViewer.panel._snapPosition()
+        for _, mod in ipairs({ WB.Bag, WB.Bank, WB.AltViewer }) do
+            if mod and mod.panel and mod.panel._snapPosition then mod.panel._snapPosition() end
         end
     end
     WB:Emit(event, ...)
@@ -320,67 +333,48 @@ end)
 -- ============================================================
 -- Slash command
 -- ============================================================
--- Multiple aliases: /wbags is the primary unique slug, /wicksbags the long
--- form. /wb is kept as a convenience but may conflict with other addons
--- (WeakAuras and others register it). If /wb doesn't respond to our
--- subcommands, use /wbags instead.
-SLASH_WICKSBAGS1 = "/wbags"
-SLASH_WICKSBAGS2 = "/wicksbags"
-SLASH_WICKSBAGS3 = "/wb"
-SlashCmdList.WICKSBAGS = function(input)
-    input = (input or ""):gsub("^%s*(.-)%s*$", "%1"):lower()
+A:RegisterSlash(function(_, input)
+    input = (input or ""):lower()
     if input == "" or input == "toggle" then
         if WB.Bag and WB.Bag.Toggle then WB.Bag:Toggle() end
         return
     end
-    if input == "show" and WB.Bag then WB.Bag:Show()  return end
-    if input == "hide" and WB.Bag then WB.Bag:Hide()  return end
-    if input == "reset" and WB.Bag then WB.Bag:ResetPosition()  return end
+    if input == "show" and WB.Bag then WB.Bag:Show() return end
+    if input == "hide" and WB.Bag then WB.Bag:Hide() return end
+    if input == "reset" and WB.Bag then WB.Bag:ResetPosition() return end
+    if input == "options" or input == "config" then
+        if WB.Options then WB.Options:Toggle() end
+        return
+    end
+    if input == "alts" and WB.AltViewer then WB.AltViewer:Toggle() return end
+    if input == "sort" then
+        if C_Container and C_Container.SortBags and not InCombatLockdown() then C_Container.SortBags() end
+        return
+    end
     if input == "help" or input == "?" then
-        print("|cff4FC778Wick's Bags|r")
+        A:Print("commands")
         print("  /wbags                 toggle the panel")
-        print("  /wbags show            show")
-        print("  /wbags hide            hide")
+        print("  /wbags show | hide     show or hide")
+        print("  /wbags options         open options")
+        print("  /wbags alts            open the alt inventory viewer")
+        print("  /wbags sort            one-click sort")
         print("  /wbags reset           reset position")
-        print("  /wbags autoopen on|off auto-open at mailbox/vendor/bank")
-        print("  /wbags dump            dump saved-variable state")
+        print("  /wbags autoopen on|off auto-open at mailbox, vendor, bank")
         return
     end
     if input:match("^autoopen") then
         local arg = input:match("^autoopen%s+(%S+)")
         if arg == "off" or arg == "false" or arg == "0" then
             WB.db.options.autoOpenBags = false
-            print("|cff4FC778Wick's Bags|r: auto-open disabled.")
+            A:Print("auto-open disabled.")
         elseif arg == "on" or arg == "true" or arg == "1" then
             WB.db.options.autoOpenBags = true
-            print("|cff4FC778Wick's Bags|r: auto-open enabled.")
+            A:Print("auto-open enabled.")
         else
-            print(("|cff4FC778Wick's Bags|r: auto-open is %s. Use /wbags autoopen on|off."):format(
+            A:Print(("auto-open is %s. Use /wbags autoopen on|off."):format(
                 WB.db.options.autoOpenBags == false and "off" or "on"))
         end
         return
     end
-    if input == "dump" then
-        print("|cff4FC778Wick's Bags|r DB dump:")
-        local pos = WB.db.bagPos or {}
-        print(("  bagPos.posPoint = %s"):format(tostring(pos.posPoint)))
-        print(("  bagPos.posRel   = %s"):format(tostring(pos.posRel)))
-        print(("  bagPos.posX     = %s"):format(tostring(pos.posX)))
-        print(("  bagPos.posY     = %s"):format(tostring(pos.posY)))
-        print(("  bagPos.panelW   = %s"):format(tostring(pos.panelW)))
-        print(("  bankPos exists  = %s"):format(tostring(WB.db.bankPos ~= nil)))
-        print(("  avPos exists    = %s"):format(tostring(WB.db.avPos ~= nil)))
-        print(("  ui.hidden       = %s"):format(tostring(WB.db.ui.hidden)))
-        if WB.Bag and WB.Bag.panel and WB.Bag.panel:IsShown() then
-            local lp, _, lrp, lx, ly = WB.Bag.panel:GetPoint()
-            print(("  panel live pos  = %s/%s x=%s y=%s"):format(tostring(lp), tostring(lrp), tostring(lx), tostring(ly)))
-            print(("  panel live w    = %s"):format(tostring(WB.Bag.panel:GetWidth())))
-        else
-            print("  panel not shown")
-        end
-        return
-    end
-    print("|cff4FC778Wick's Bags|r: unknown command. Try /wb help")
-end
-
--- Hide the default bag UI when ours is open? Optional v0.1 polish, deferred.
+    A:Print("unknown command. Try /wbags help")
+end, "/wbags", "/wicksbags", "/wb")

@@ -1,10 +1,12 @@
-## Interface: 20505
+## Interface: 16001
 ## Title: Wick's Bags
-## Notes: Categorized bag panel for TBC. Auto-categorize, search, gold display, custom rules, pluggable category sources.
+## Notes: Categorized bags and bank for World of Warcraft: Forever. Auto-categorize, search, one-click sort, alt inventory and tooltips, custom rules.
 ## Author: Wick
-## Version: 0.9.3
+## Version: 1.0.0
+## Dependencies: WickCore
 ## SavedVariables: WicksBagsDB, WicksBagsAlts
-## SavedVariablesPerCharacter: WicksBagsCharDB
+## X-Website: https://wicksmods.com
+## X-WickCore: WickCore-1.0
 
 # Core
 Core.lua
@@ -16,5 +18,4 @@ Bank.lua
 AltViewer.lua
 
 # Bindings.xml is auto-loaded by WoW from the addon root because of its
-# special filename — listing it here would load it twice and trigger
-# "Unrecognized XML attribute" warnings on every reload.
+# special filename. Listing it here would load it twice.

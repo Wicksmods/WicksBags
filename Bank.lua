@@ -26,20 +26,80 @@ local PADDING       = 10
 local BOTTOM_BUFFER = 14
 local BAG_BAR_H     = 32
 
--- Bank container IDs (TBC):
---   -1     = main bank window (28 slots)
---   5..11  = bank bag containers (one per equipped bank bag)
+-- Bank container model differs by client:
+--   Forever / retail: purchasable tabs, bag IDs CharacterBankTab_1..N (6..14).
+--                     No main bank window, no bank bag equip slots.
+--   TBC:              -1 main bank window (28 slots) + bank bags 5..11.
+local BagIndex = Enum and Enum.BagIndex
+local TAB_BANK = (C_Bank and C_Bank.FetchNumPurchasedBankTabs and BagIndex and BagIndex.CharacterBankTab_1) and true or false
+local BANK_TYPE_CHAR = (Enum and Enum.BankType and Enum.BankType.Character) or 0
 local BANK_CONTAINER = -1
--- Use Blizzard's global if available, fall back to 7 (TBC default).
-local NUM_BANKBAGSLOTS_LOCAL = NUM_BANKBAGSLOTS or 7
-local function bankBagIDs()
-    local t = { BANK_CONTAINER }
-    for i = 1, NUM_BANKBAGSLOTS_LOCAL do
-        t[#t + 1] = 4 + i   -- 5, 6, 7, ..., 11
+local NUM_BANKBAGSLOTS_LOCAL
+if TAB_BANK then
+    local ok, n = pcall(C_Bank.FetchMaxNumBankTabs, BANK_TYPE_CHAR)
+    NUM_BANKBAGSLOTS_LOCAL = (ok and n) or 9
+else
+    NUM_BANKBAGSLOTS_LOCAL = NUM_BANKBAGSLOTS or 7
+end
+
+local function numPurchasedBankSlots()
+    if TAB_BANK then
+        local ok, n = pcall(C_Bank.FetchNumPurchasedBankTabs, BANK_TYPE_CHAR)
+        return (ok and n) or 0
     end
+    return (GetNumBankSlots and GetNumBankSlots()) or 0
+end
+
+-- Tab data for slot button i (Forever only): { ID, name, icon, ... }.
+local function tabData(i)
+    if not TAB_BANK or not C_Bank.FetchPurchasedBankTabData then return nil end
+    local ok, list = pcall(C_Bank.FetchPurchasedBankTabData, BANK_TYPE_CHAR)
+    return ok and list and list[i] or nil
+end
+
+-- Container ID for bank slot button i.
+local function slotBagID(i)
+    if TAB_BANK then return BagIndex.CharacterBankTab_1 + i - 1 end
+    return 4 + i
+end
+
+-- Every container the bank panel shows, recomputed per call because tabs
+-- can be purchased while the bank is open.
+local function bankBagIDs()
+    if TAB_BANK then
+        local t = {}
+        for i = 1, numPurchasedBankSlots() do t[#t + 1] = slotBagID(i) end
+        return t
+    end
+    local t = { BANK_CONTAINER }
+    for i = 1, NUM_BANKBAGSLOTS_LOCAL do t[#t + 1] = 4 + i end
     return t
 end
-local BANK_BAG_IDS = bankBagIDs()
+WB.Bank.ContainerIDs = bankBagIDs
+WB.Bank.IsTabBank = TAB_BANK
+
+local function nextBankSlotCost()
+    if TAB_BANK then
+        if not C_Bank.FetchNextPurchasableBankTabData then return nil end
+        local ok, data = pcall(C_Bank.FetchNextPurchasableBankTabData, BANK_TYPE_CHAR)
+        return ok and data and data.tabCost or nil
+    end
+    if GetBankSlotCost then return GetBankSlotCost(GetNumBankSlots and GetNumBankSlots() or 0) end
+    return nil
+end
+
+local function purchaseBankSlot()
+    if TAB_BANK then
+        if C_Bank.PurchaseBankTab then pcall(C_Bank.PurchaseBankTab, BANK_TYPE_CHAR) end
+        return
+    end
+    if not PurchaseSlot then return end
+    if nextBankSlotCost() and StaticPopup_Show then
+        StaticPopup_Show("CONFIRM_BUY_BANK_SLOT")
+    else
+        PurchaseSlot()
+    end
+end
 
 -- ============================================================
 -- Slot widget (separate pool from Bag.lua so bank slots don't recycle bag
@@ -63,7 +123,7 @@ end
 -- the cursor item there. Used by the FREE aggregate tile, which represents
 -- N empty bank slots but doesn't have a specific bag/slot of its own.
 local function dropIntoFirstEmptyBank()
-    for _, bag in ipairs(BANK_BAG_IDS) do
+    for _, bag in ipairs(bankBagIDs()) do
         local n = ns.GetContainerNumSlots(bag) or 0
         for slot = 1, n do
             if not ns.GetContainerItemLink(bag, slot) then
@@ -177,6 +237,14 @@ local function buildSlot(parent, index)
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Ctrl+right-click: show category assignment context menu (same as bag panel).
+    b:HookScript("OnMouseUp", function(self, button)
+        if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
+           and self._itemID and WB.ShowCatMenu then
+            WB.ShowCatMenu(self._itemID, self._itemName)
+        end
+    end)
+
     -- HookScript (not SetScript) — preserves Blizzard template's secure
     -- OnClick/OnReceiveDrag dispatch. Our hooks only fire for FREE tiles
     -- (no real bag/slot) which the template can't address.
@@ -220,6 +288,8 @@ end
 
 local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locked)
     b._bag, b._slot = bag, slot
+    b._itemID   = itemID
+    b._itemName = link and link:match("%[(.-)%]") or nil
     -- Wire IDs the template's OnClick reads:
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end
@@ -248,9 +318,9 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
         end
 
         if WB.db.options.showItemLevel ~= false then
-            local _, _, _, _, _, classID = GetItemInfoInstant(itemID)
+            local _, _, _, _, _, classID = ns.GetItemInfoInstant(itemID)
             if classID == 2 or classID == 4 then
-                local _, _, _, ilvlVal = GetItemInfo(itemID)
+                local _, _, _, ilvlVal = ns.GetItemInfo(itemID)
                 if ilvlVal and ilvlVal > 1 then
                     b._ilvlText:SetText(tostring(ilvlVal))
                     b._ilvlText:Show()
@@ -395,7 +465,7 @@ end
 local function gatherItems()
     local items = {}
     local filterBag = WB.db.ui and WB.db.ui._filterBankBag
-    for _, bag in ipairs(BANK_BAG_IDS) do
+    for _, bag in ipairs(bankBagIDs()) do
         if filterBag == nil or filterBag == bag then
             local n = ns.GetContainerNumSlots(bag) or 0
             for slot = 1, n do
@@ -498,7 +568,8 @@ local function buildPanel()
     -- user would still be "at the banker" silently and the next bag-update
     -- would re-pop the panel. CloseBankFrame fires BANKFRAME_CLOSED.
     close:SetScript("OnClick", function()
-        if CloseBankFrame then CloseBankFrame() end
+        if C_Bank and C_Bank.CloseBankFrame then C_Bank.CloseBankFrame()
+        elseif CloseBankFrame then CloseBankFrame() end
         WB.Bank:Hide()
     end)
     close:SetScript("OnEnter", function() x:SetTextColor(UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3], 1) end)
@@ -562,13 +633,13 @@ local function buildPanel()
     UI:AddBorder(buyBtn, UI.C_BORDER)
     local buyTxt = UI:NewText(buyBtn, 10, UI.C_TEXT_NORMAL)
     buyTxt:SetPoint("CENTER")
-    buyTxt:SetText("Buy slot")
+    buyTxt:SetText(TAB_BANK and "Buy tab" or "Buy slot")
     buyBtn:SetScript("OnEnter", function()
         buyTxt:SetTextColor(UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3], 1)
-        local cost = GetBankSlotCost and GetBankSlotCost(GetNumBankSlots and GetNumBankSlots() or 0)
+        local cost = nextBankSlotCost()
         if cost then
             GameTooltip:SetOwner(buyBtn, "ANCHOR_TOP")
-            GameTooltip:AddLine("Buy next bank bag slot", 1, 1, 1)
+            GameTooltip:AddLine(TAB_BANK and "Buy next bank tab" or "Buy next bank bag slot", 1, 1, 1)
             GameTooltip:AddLine("Cost: " .. UI:FormatMoney(cost),
                 UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             GameTooltip:Show()
@@ -580,17 +651,28 @@ local function buildPanel()
     end)
     buyBtn:SetScript("OnClick", function()
         if InCombatLockdown() then return end
-        -- Blizzard's confirmation dialog — opens the buy-slot popup.
-        if PurchaseSlot then
-            local cost = GetBankSlotCost and GetBankSlotCost(GetNumBankSlots and GetNumBankSlots() or 0)
-            if cost and StaticPopup_Show then
-                StaticPopup_Show("CONFIRM_BUY_BANK_SLOT")
-            else
-                PurchaseSlot()
-            end
-        end
+        purchaseBankSlot()
     end)
     panel._buyBtn = buyBtn
+
+    -- One-click bank sort (Forever and retail).
+    if C_Container and C_Container.SortBank then
+        local sortBtn = CreateFrame("Button", nil, botBar)
+        sortBtn:SetSize(40, 18)
+        sortBtn:SetPoint("LEFT", buyBtn, "RIGHT", 6, 0)
+        UI:NewTexture(sortBtn, "BACKGROUND", { 0, 0, 0, 0.6 }):SetAllPoints(sortBtn)
+        UI:AddBorder(sortBtn, UI.C_BORDER)
+        local sortTxt = UI:NewText(sortBtn, 10, UI.C_TEXT_NORMAL)
+        sortTxt:SetPoint("CENTER")
+        sortTxt:SetText("Sort")
+        sortBtn:SetScript("OnClick", function()
+            if InCombatLockdown() then return end
+            C_Container.SortBank()
+        end)
+        sortBtn:SetScript("OnEnter", function() sortTxt:SetTextColor(UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3], 1) end)
+        sortBtn:SetScript("OnLeave", function() sortTxt:SetTextColor(UI.C_TEXT_NORMAL[1], UI.C_TEXT_NORMAL[2], UI.C_TEXT_NORMAL[3], 1) end)
+        panel._sortBtn = sortBtn
+    end
 
     -- Bank bag icons (left of gold). Show only the bag slots the player
     -- owns. All 7 bank bag slots are drag sources (pick up an equipped bank
@@ -599,7 +681,7 @@ local function buildPanel()
     botBar._slots = {}
     local bankSlotSize = 22
     for i = 1, NUM_BANKBAGSLOTS_LOCAL do
-        local bagContainerID = 4 + i   -- container IDs 5..11
+        local bagContainerID = slotBagID(i)   -- TBC 5..11, Forever tab bag IDs 6..14
         local btn = CreateFrame("Button", nil, botBar)
         btn:SetSize(bankSlotSize, bankSlotSize)
         btn:EnableMouse(true)
@@ -630,7 +712,14 @@ local function buildPanel()
         btn:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:ClearLines()
-            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            if TAB_BANK then
+                local data = tabData(self._index)
+                GameTooltip:AddLine((data and data.name) or ("Bank tab " .. self._index), 1, 1, 1)
+                GameTooltip:AddLine("Right-click: toggle filter", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+                GameTooltip:Show()
+                return
+            end
+            local invID = (not TAB_BANK and ns.ContainerIDToInventoryID) and ns.ContainerIDToInventoryID(bagContainerID) or nil
             local hasBag = invID and GetInventoryItemID("player", invID) ~= nil
             if invID and hasBag then
                 GameTooltip:SetInventoryItem("player", invID)
@@ -646,7 +735,7 @@ local function buildPanel()
         -- Drag start: pick up the equipped bank bag.
         btn:SetScript("OnDragStart", function(self)
             if InCombatLockdown() then return end
-            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            local invID = (not TAB_BANK and ns.ContainerIDToInventoryID) and ns.ContainerIDToInventoryID(bagContainerID) or nil
             if invID and GetInventoryItemID("player", invID) then
                 PickupBagFromSlot(invID)
             end
@@ -654,7 +743,7 @@ local function buildPanel()
         -- Receive a drag: equip the cursor bag into this bank bag slot.
         btn:SetScript("OnReceiveDrag", function(self)
             if InCombatLockdown() then return end
-            local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+            local invID = (not TAB_BANK and ns.ContainerIDToInventoryID) and ns.ContainerIDToInventoryID(bagContainerID) or nil
             if invID then PutItemInBag(invID) end
         end)
         btn:SetScript("OnClick", function(self, button)
@@ -667,12 +756,13 @@ local function buildPanel()
             -- Left-click with cursor item: equip it into this bank bag slot.
             if CursorHasItem and CursorHasItem() then
                 if InCombatLockdown() then return end
-                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(bagContainerID) or nil
+                local invID = (not TAB_BANK and ns.ContainerIDToInventoryID) and ns.ContainerIDToInventoryID(bagContainerID) or nil
                 if invID then PutItemInBag(invID) end
                 return
             end
-            -- Left-click (no cursor): open the specific bank bag.
-            if InCombatLockdown() then return end
+            -- Left-click (no cursor): open the specific bank bag. Tabs have
+            -- no separate window; the unified panel already shows them.
+            if TAB_BANK or InCombatLockdown() then return end
             if ToggleBag then ToggleBag(self._bag)
             elseif OpenBag then OpenBag(self._bag) end
         end)
@@ -714,6 +804,7 @@ local function buildPanel()
         end
     end)
     botBar._mainBankBtn = mainBankBtn
+    if TAB_BANK then mainBankBtn:Hide() end
 
     -- Gold display (far right)
     local goldText = UI:NewText(botBar, 11, UI.C_TEXT_NORMAL)
@@ -725,15 +816,20 @@ local function buildPanel()
 
     function botBar:Refresh()
         -- Bank bag icons: show only purchased slots, with filter highlight.
-        local numPurchased = (GetNumBankSlots and GetNumBankSlots()) or 0
+        local numPurchased = numPurchasedBankSlots()
         local activeFilter = WB.db.ui._filterBankBag
         local prev = self._gold
         for i = NUM_BANKBAGSLOTS_LOCAL, 1, -1 do
             local btn = self._slots[i]
             if i <= numPurchased then
-                local invID = ns.ContainerIDToInventoryID and ns.ContainerIDToInventoryID(4 + i) or nil
+                local invID = (not TAB_BANK and ns.ContainerIDToInventoryID) and ns.ContainerIDToInventoryID(4 + i) or nil
                 local bagItemID = invID and GetInventoryItemID("player", invID)
                 local tex = invID and GetInventoryItemTexture("player", invID)
+                if TAB_BANK then
+                    local data = tabData(i)
+                    bagItemID = true
+                    tex = (data and data.icon) or "Interface\\Icons\\INV_Misc_Bag_07_Black"
+                end
                 -- Purchased but empty: clear icon texture so "+" mark shows through.
                 if not bagItemID then tex = nil end
                 btn._icon:SetTexture(tex)
@@ -749,7 +845,7 @@ local function buildPanel()
             end
         end
         -- Main-bank filter icon: anchor left of the rightmost visible bag
-        if self._mainBankBtn then
+        if self._mainBankBtn and not TAB_BANK then
             self._mainBankBtn._hilite:SetShown(activeFilter == -1)
             self._mainBankBtn:ClearAllPoints()
             self._mainBankBtn:SetPoint("RIGHT", prev, "LEFT", -6, 0)
