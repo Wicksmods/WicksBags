@@ -15,15 +15,15 @@ local MAX_PANEL_W   = 540
 local MIN_PANEL_W   = 420
 local HEADER_H      = 28
 local SLOT_SIZE     = 32
-local SLOT_GAP      = 3
-local CATEGORY_H    = 18
-local CAT_GAP_X     = 12
-local CAT_GAP_Y     = 10
-local SUB_GAP_X     = 10
-local SUB_GAP_Y     = 4
+local SLOT_GAP      = 2
+local CATEGORY_H    = 14
+local CAT_GAP_X     = 6
+local CAT_GAP_Y     = 6
+local SUB_GAP_X     = 6
+local SUB_GAP_Y     = 3
 local MAX_COLS_PER_CAT = 6
-local PADDING       = 10
-local BOTTOM_BUFFER = 14
+local PADDING       = 6
+local BOTTOM_BUFFER = 8
 local BAG_BAR_H     = 32
 
 -- Bank container model differs by client:
@@ -409,10 +409,10 @@ local function hideUnusedHeaders(usedCount)
 end
 
 local groupContainers = {}
-local GROUP_HEADER_H = 16
-local GROUP_PAD_X    = 6
-local GROUP_PAD_TOP  = GROUP_HEADER_H + 2
-local GROUP_PAD_BOT  = 6
+local GROUP_HEADER_H = 14
+local GROUP_PAD_X    = 4
+local GROUP_PAD_TOP  = GROUP_HEADER_H + 1
+local GROUP_PAD_BOT  = 4
 
 local _measureFS
 local function measureHeaderWidth(text)
@@ -1031,7 +1031,7 @@ function BNK:Refresh()
                 if headerW + 4 > minW then minW = headerW + 4 end
             end
             blk.w = minW
-            blk.h = CATEGORY_H + blk.rows * SLOT_W - SLOT_GAP
+            blk.h = (blk.skipHeader and 0 or CATEGORY_H) + blk.rows * SLOT_W - SLOT_GAP
         end
     end
 
@@ -1179,7 +1179,7 @@ function BNK:Refresh()
                 h._items = blk.items
             end
 
-            local slotsYOffset = CATEGORY_H
+            local slotsYOffset = blk.skipHeader and 0 or CATEGORY_H
             local slotsXOffset = math.floor((blk.w - blk.slotW) / 2)
             if slotsXOffset < 0 then slotsXOffset = 0 end
             for j, it in ipairs(blk.items) do

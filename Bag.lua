@@ -22,15 +22,15 @@ local MAX_PANEL_W   = 480
 local MIN_PANEL_W   = 400   -- header (title/gold/search/cog/close) fits at full font sizes
 local HEADER_H      = 28
 local SLOT_SIZE     = 32
-local SLOT_GAP      = 3
-local CATEGORY_H    = 18
-local CAT_GAP_X     = 12   -- horizontal gap between top-level group containers
-local CAT_GAP_Y     = 10   -- vertical gap between top-level group containers
-local SUB_GAP_X     = 10   -- horizontal gap between sub-blocks INSIDE a container
-local SUB_GAP_Y     = 4    -- vertical gap between sub-block rows INSIDE a container
+local SLOT_GAP      = 2
+local CATEGORY_H    = 14
+local CAT_GAP_X     = 6   -- horizontal gap between top-level group containers
+local CAT_GAP_Y     = 6   -- vertical gap between top-level group containers
+local SUB_GAP_X     = 6   -- horizontal gap between sub-blocks INSIDE a container
+local SUB_GAP_Y     = 3    -- vertical gap between sub-block rows INSIDE a container
 local MAX_COLS_PER_CAT = 5
-local PADDING       = 10
-local BOTTOM_BUFFER = 14
+local PADDING       = 6
+local BOTTOM_BUFFER = 8
 local BAG_BAR_H     = 32    -- height reserved for the optional bag bar
 local NUM_BAGS      = 4   -- TBC: 0 (backpack) + 1..4
 -- Keyring container: Enum.BagIndex.Keyring (-1) on Forever, -2 on TBC.
@@ -1436,10 +1436,10 @@ end
 
 -- Pool of group-container frames (one per parent class with 2+ sub-cats in view).
 local groupContainers = {}
-local GROUP_HEADER_H = 16
-local GROUP_PAD_X    = 6
-local GROUP_PAD_TOP  = GROUP_HEADER_H + 2
-local GROUP_PAD_BOT  = 6
+local GROUP_HEADER_H = 14
+local GROUP_PAD_X    = 4
+local GROUP_PAD_TOP  = GROUP_HEADER_H + 1
+local GROUP_PAD_BOT  = 4
 
 -- Hidden FontString used to measure header text width so container width
 -- can be sized to fit both the slot grid AND the centered header label.
@@ -1847,9 +1847,9 @@ function BG:Refresh()
                 if headerW + 4 > minW then minW = headerW + 4 end
             end
             blk.w = minW
-            -- Always reserve sub-header height so single-sub groups line up
-            -- vertically with multi-sub siblings on the same row.
-            blk.h = CATEGORY_H + blk.rows * SLOT_W - SLOT_GAP
+            -- A single-sub group draws its name on the container, so the
+            -- block keeps no sub-header band of its own.
+            blk.h = (blk.skipHeader and 0 or CATEGORY_H) + blk.rows * SLOT_W - SLOT_GAP
         end
     end
 
@@ -2114,7 +2114,7 @@ function BG:Refresh()
                 end
 
                 -- Soul Shard expanded: normal slot grid so the player can pick one up.
-                local slotsYOffset = CATEGORY_H
+                local slotsYOffset = blk.skipHeader and 0 or CATEGORY_H
                 local slotsXOffset = math.floor((blk.w - blk.slotW) / 2)
                 if slotsXOffset < 0 then slotsXOffset = 0 end
                 for j, it in ipairs(blk.items) do
