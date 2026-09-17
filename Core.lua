@@ -59,6 +59,60 @@ function ns.GetItemInfoInstant(item)
 end
 
 -- ============================================================
+-- Item button template
+-- ============================================================
+-- Retail's ContainerFrameItemButtonTemplate is built on the intrinsic
+-- ItemButton frame type. Creating it as a plain "Button" silently drops the
+-- intrinsic's own regions (icon, Count, IconBorder, NormalTexture), which is
+-- how the first Forever login crashed on a nil icon texture. Ask the client
+-- what type the template wants; TBC has no intrinsics and keeps "Button".
+local function slotFrameType()
+    if C_XMLUtil and C_XMLUtil.GetTemplateInfo then
+        local ok, info = pcall(C_XMLUtil.GetTemplateInfo, "ContainerFrameItemButtonTemplate")
+        if ok and type(info) == "table" and type(info.type) == "string" and info.type ~= "" then
+            return info.type
+        end
+    end
+    -- No template introspection: probe for the intrinsic directly.
+    local ok, f = pcall(CreateFrame, "ItemButton")
+    if ok and f then
+        f:Hide()
+        return "ItemButton"
+    end
+    return "Button"
+end
+ns.SLOT_FRAME_TYPE = slotFrameType()
+
+-- The icon texture and stack count of a slot button, whichever way the
+-- client keys them (retail parentKey, TBC global name), or our own regions
+-- when the template supplied neither.
+function ns.SlotIconTexture(b)
+    local name = b.GetName and b:GetName()
+    local tex = b.icon or b.IconTexture or (name and _G[name .. "IconTexture"])
+    if not tex then
+        tex = b:CreateTexture(nil, "ARTWORK")
+        tex:SetPoint("TOPLEFT", 1, -1)
+        tex:SetPoint("BOTTOMRIGHT", -1, 1)
+        tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        b.icon = tex
+    end
+    return tex
+end
+
+function ns.SlotCountText(b)
+    local name = b.GetName and b:GetName()
+    local fs = b.Count or (name and _G[name .. "Count"])
+    if not fs then
+        fs = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        fs:SetPoint("BOTTOMRIGHT", -3, 2)
+        fs:SetJustifyH("RIGHT")
+        fs:Hide()
+        b.Count = fs
+    end
+    return fs
+end
+
+-- ============================================================
 -- Saved variables
 -- ============================================================
 -- Everything a player configures lives in the profile so WickCore can key it

@@ -143,7 +143,7 @@ local function buildSlot(parent, index)
     local host = CreateFrame("Button", nil, parent)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
-    local b = CreateFrame("Button", "WicksBankSlot" .. index, host,
+    local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBankSlot" .. index, host,
         "ContainerFrameItemButtonTemplate")
     b:SetAllPoints(host)
     b._host = host
@@ -187,9 +187,8 @@ local function buildSlot(parent, index)
     neuter(b.NewItemTexture)
     neuter(b.BattlepayItemTexture)
 
-    local name = b:GetName()
-    b._iconTex   = _G[name .. "IconTexture"] or b.IconTexture
-    b._countText = _G[name .. "Count"]       or b.Count
+    b._iconTex   = ns.SlotIconTexture(b)
+    b._countText = ns.SlotCountText(b)
 
     local function edge(p1, p2, w, h)
         local t = b:CreateTexture(nil, "OVERLAY")

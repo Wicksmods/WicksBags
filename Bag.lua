@@ -239,7 +239,7 @@ local function buildSlot(parent, index)
     local host = CreateFrame("Button", nil, parent)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
-    local b = CreateFrame("Button", "WicksBagsSlot" .. index, host,
+    local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBagsSlot" .. index, host,
         "ContainerFrameItemButtonTemplate")
     b:SetAllPoints(host)
     b._host = host
@@ -296,14 +296,10 @@ local function buildSlot(parent, index)
     neuter(b.NewItemTexture)
     neuter(b.BattlepayItemTexture)
 
-    -- The ItemButton template already provides:
-    --   b.IconTexture (or _G[name.."IconTexture"])
-    --   b.Count       (or _G[name.."Count"])
-    --   b.NormalTexture (border)
-    -- TBC's template uses globals; cache them here.
-    local name = b:GetName()
-    b._iconTex   = _G[name .. "IconTexture"] or b.IconTexture
-    b._countText = _G[name .. "Count"]       or b.Count
+    -- Icon and stack count: retail keys them b.icon / b.Count, TBC uses
+    -- globals. ns resolves either and builds our own when neither exists.
+    b._iconTex   = ns.SlotIconTexture(b)
+    b._countText = ns.SlotCountText(b)
 
     -- Quality border: 4 thin colored edges (no full-cover overlay).
     local function edge(p1, p2, w, h)
