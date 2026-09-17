@@ -76,15 +76,19 @@ local DB_DEFAULTS = {
         hideDefaultBank = true,        -- suppress Blizzard's BankFrame; show only Wick's Bank
         suppressAutoBags = true,       -- close Blizzard's default bag UI when it auto-opens at bank/vendor
         autoOpenBags = true,           -- auto-open Wick's Bags at mailbox/vendor/bank/AH/tradeskill
+        hideKeyring     = false,       -- hide keyring slots from the bag panel
         activeSourceId  = "auto",
     },
-    -- User-defined category overrides. Editable directly in saved variables;
-    -- a UI for managing these lands in v0.4. Resolution order in Categories.lua:
-    -- byItemId (exact) -> patterns (substring on name) -> auto -> Misc.
+    -- User-defined category overrides. Resolution order in Categories.lua:
+    --   byItemId (exact) -> byClass (class/subclass) -> patterns (name substring) -> auto -> Misc.
     customRules = {
-        byItemId = {},      -- [itemID] = "My Custom Category"
-        patterns = {},      -- ordered list: { { match = "Mageweave", category = "Mageweave Set" }, ... }
+        byItemId = {},    -- [itemID] = "My Custom Category"
+        byClass  = {},    -- ordered list: { { classID=N, subClassID=N|nil, category="Cat" }, ... }
+        patterns = {},    -- ordered list: { { match="Mageweave", category="Cat" }, ... }
     },
+    -- User-defined categories: names + which parent group they nest under.
+    -- { ["My Cat"] = { parent = "Trade Goods" }, ... }
+    userCats = {},
 }
 
 local function applyDefaults(target, defaults)

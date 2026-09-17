@@ -61,6 +61,7 @@ end
 --   Class 4 / Sub 11  = Totem  (shaman casting reagent)
 --   Class 15 / Sub 5  = Mount
 --   Class 15 / Sub 2  = Pet    (companion / vanity pet)
+--   Class 15 / Sub 1  = Soul Shard (warlock reagent; aggregate display in Bag.lua)
 local AUTO_BY_CLASS = {
     [0]  = "Consumable",
     [1]  = "Container",
@@ -103,7 +104,7 @@ local AUTO_BY_CLASS_SUB = {
         [10] = "Elemental",
         [12] = "Enchanting",    -- dust, essences, shards
     },
-    -- Misc (class 15): mounts and pets
+    -- Misc (class 15): mounts and pets. Soul Shard is gated at resolve time.
     [15] = { [5] = "Mount", [2] = "Pet" },
 }
 
@@ -126,6 +127,7 @@ local AUTO_CATEGORY_LIST = {
     "Jewelcrafting",
     "Cooking",
     "Trade Goods",
+    "Soul Shard",
     "Mount",
     "Pet",
     "Quest",
@@ -139,8 +141,22 @@ local AUTO_CATEGORY_LIST = {
     "Misc",
 }
 
+-- Cached at first call; class never changes mid-session.
+local _isWarlock
+local function isWarlock()
+    if _isWarlock == nil then
+        local _, classFile = UnitClass("player")
+        _isWarlock = (classFile == "WARLOCK")
+    end
+    return _isWarlock
+end
+
+local SOUL_SHARD_ID = 6265
+
 local function autoGet(self, itemId, itemLink)
     if not itemId then return nil end
+    -- Soul Shards are warlock-only; on other classes they fall through to Misc.
+    if itemId == SOUL_SHARD_ID and isWarlock() then return "Soul Shard" end
     -- GetItemInfo: ..., quality, ..., bindType, ...
     -- bindType: 0=none, 1=soulbound, 2=onEquip, 3=onUse, 4=quest
     local _, _, quality, _, _, _, _, _, _, _, _, _, _, bindType = GetItemInfo(itemId)
@@ -243,10 +259,12 @@ CT:RegisterSource("itemrack", {
 -- Main resolver: called by Bag.lua for every item slot
 -- ============================================================
 -- Resolution order:
---   1. customRules.byItemId (exact item override)
---   2. customRules.patterns (substring match on item name, in declared order)
---   3. Active CategorySource (auto / tsm / outfit / etc.)
---   4. "Misc" fallback
+--   1. customRules.byItemId  — exact item override
+--   2. customRules.byClass   — item class / subclass match (in declared order)
+--   3. customRules.patterns  — substring match on item name (in declared order)
+--   4. ItemRack sets         — if ItemRack loaded and option enabled
+--   5. Active CategorySource — auto / etc.
+--   6. "Misc" fallback
 function CT:GetCategory(itemId, itemLink)
     if not itemId then return "Empty" end
 
@@ -256,7 +274,22 @@ function CT:GetCategory(itemId, itemLink)
         local byId = rules.byItemId
         if byId and byId[itemId] then return byId[itemId] end
 
-        -- 2. Name pattern (substring, case-insensitive)
+        -- 2. Class / subclass rules (ordered; first match wins)
+        local byClass = rules.byClass
+        if byClass and #byClass > 0 then
+            local _, _, _, _, _, classID, subClassID = GetItemInfoInstant(itemId)
+            if classID then
+                for _, rule in ipairs(byClass) do
+                    if rule.classID == classID then
+                        if rule.subClassID == nil or rule.subClassID == subClassID then
+                            return rule.category
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 3. Name pattern (substring, case-insensitive)
         local patterns = rules.patterns
         if patterns and itemLink then
             local name = itemLink:match("%[(.-)%]")
@@ -271,21 +304,20 @@ function CT:GetCategory(itemId, itemLink)
         end
     end
 
-    -- 3. ItemRack sets (if ItemRack is loaded). Items in user-defined gear
-    -- sets bucket under the set name; everything else falls through to auto.
+    -- 4. ItemRack sets (if ItemRack is loaded).
     if ItemRackUser and self.sources["itemrack"] and WB.db.options.useItemRack ~= false then
         local cat = self.sources["itemrack"]:GetCategoryFor(itemId, itemLink)
         if cat then return cat end
     end
 
-    -- 4. Active source
+    -- 5. Active source
     local source = self.sources[self:ActiveSourceId()] or self.sources["auto"]
     if source then
         local cat = source:GetCategoryFor(itemId, itemLink)
         if cat then return cat end
     end
 
-    -- 5. Fallback
+    -- 6. Fallback
     return "Misc"
 end
 
@@ -312,6 +344,7 @@ local DISPLAY_ORDER = {
     "Jewelcrafting",
     "Cooking",
     "Trade Goods",    -- generic trade goods
+    "Soul Shard",     -- warlock reagent; rendered as aggregate tile
     "Mount",
     "Pet",
     "Quest",
@@ -365,14 +398,20 @@ local PARENT_OF = {
     ["Mount"]          = "Misc",
     ["Pet"]            = "Misc",
     ["Misc"]           = "Misc",
+
+    -- Soul Shard: standalone (own parent so it gets no outer group container)
+    ["Soul Shard"]     = "Soul Shard",
 }
 
 function CT:GetParent(cat)
     if PARENT_OF[cat] then return PARENT_OF[cat] end
-    -- ItemRack gear-set names route under the Equipment parent so the set
-    -- shows up as a sub-block inside the EQUIPMENT container alongside the
-    -- "Equipment" auto-cat sub-block (items not in any set).
+    -- ItemRack gear-set names route under Equipment.
     if itemRackSetNames[cat] then return "Equipment" end
+    -- User-defined categories: honour their declared parent if set.
+    local userCats = WB.db and WB.db.userCats
+    if userCats and userCats[cat] and userCats[cat].parent then
+        return userCats[cat].parent
+    end
     return cat
 end
 
@@ -390,12 +429,42 @@ function CT:OrderedCategories()
                     seen[c] = true
                 end
             end
+            -- Append user-defined categories not already in the list.
+            local userCats = WB.db and WB.db.userCats
+            if userCats then
+                local names = {}
+                for name in pairs(userCats) do names[#names + 1] = name end
+                table.sort(names)
+                for _, name in ipairs(names) do
+                    if not seen[name] then
+                        out[#out + 1] = name
+                        seen[name] = true
+                    end
+                end
+            end
             for _, c in ipairs({ "Junk", "Misc", "Free" }) do
                 if not seen[c] then out[#out + 1] = c end
             end
             return out
         end
     end
-    -- Fallback: DISPLAY_ORDER (already starts with "Recent")
+    -- Fallback: DISPLAY_ORDER + user cats before Junk/Misc/Free.
+    local userCats = WB.db and WB.db.userCats
+    if userCats and next(userCats) then
+        local base = {}
+        for _, c in ipairs(DISPLAY_ORDER) do
+            if c ~= "Junk" and c ~= "Misc" and c ~= "Free" then
+                base[#base + 1] = c
+            end
+        end
+        local names = {}
+        for name in pairs(userCats) do
+            if not PARENT_OF[name] then names[#names + 1] = name end
+        end
+        table.sort(names)
+        for _, name in ipairs(names) do base[#base + 1] = name end
+        for _, c in ipairs({ "Junk", "Misc", "Free" }) do base[#base + 1] = c end
+        return base
+    end
     return DISPLAY_ORDER
 end

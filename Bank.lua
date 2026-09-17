@@ -177,6 +177,14 @@ local function buildSlot(parent, index)
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Ctrl+right-click: show category assignment context menu (same as bag panel).
+    b:HookScript("OnMouseUp", function(self, button)
+        if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
+           and self._itemID and WB.ShowCatMenu then
+            WB.ShowCatMenu(self._itemID, self._itemName)
+        end
+    end)
+
     -- HookScript (not SetScript) — preserves Blizzard template's secure
     -- OnClick/OnReceiveDrag dispatch. Our hooks only fire for FREE tiles
     -- (no real bag/slot) which the template can't address.
@@ -220,6 +228,8 @@ end
 
 local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locked)
     b._bag, b._slot = bag, slot
+    b._itemID   = itemID
+    b._itemName = link and link:match("%[(.-)%]") or nil
     -- Wire IDs the template's OnClick reads:
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end

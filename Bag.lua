@@ -39,6 +39,185 @@ local KEYRING_CONTAINER = -2   -- TBC: keys live in their own container
 local BAG_IDS = { 0, 1, 2, 3, 4, KEYRING_CONTAINER }
 
 -- ============================================================
+-- Category context menu (ctrl+right-click a slot)
+-- ============================================================
+-- Shows a flat list of all categories. Selecting one writes byItemId and
+-- fires BAGS_DIRTY. "Remove override" clears any existing byItemId rule.
+-- Follows the proven TBC pattern: TOOLTIP strata, OnLeave to dismiss,
+-- OnMouseUp to open, cursor-position anchoring.
+
+local ctxMenu
+
+local function buildCtxMenu()  -- populates the module-local ctxMenu
+    ctxMenu = CreateFrame("Frame", "WicksBagsCatMenu", UIParent)
+    ctxMenu:SetFrameStrata("TOOLTIP")
+    ctxMenu:SetClampedToScreen(true)
+    ctxMenu:EnableMouse(true)
+    ctxMenu:Hide()
+    UI:NewTexture(ctxMenu, "BACKGROUND", UI.C_BG):SetAllPoints(ctxMenu)
+    UI:AddBorder(ctxMenu, UI.C_BORDER)
+    ctxMenu:SetScript("OnLeave", function(self)
+        -- Small delay so the cursor moving into a child button doesn't close
+        C_Timer.After(0.05, function()
+            if ctxMenu:IsShown() and not ctxMenu:IsMouseOver() then
+                ctxMenu:Hide()
+            end
+        end)
+    end)
+    ctxMenu._btns = {}
+end
+
+local function showCatMenu(itemID, itemName)
+    if not ctxMenu then buildCtxMenu() end
+
+    -- Clear previous buttons
+    for _, btn in ipairs(ctxMenu._btns) do btn:Hide() end
+    ctxMenu._btns = {}
+
+    local ITEM_H = 20
+    local MENU_W = 180
+    local yOff   = -4
+
+    local function addItem(label, color, onClick)
+        local btn = CreateFrame("Button", nil, ctxMenu)
+        btn:SetSize(MENU_W - 8, ITEM_H)
+        btn:SetPoint("TOPLEFT", ctxMenu, "TOPLEFT", 4, yOff)
+        btn:EnableMouse(true)
+
+        local hl = UI:NewTexture(btn, "BACKGROUND",
+            { UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3], 0 })
+        hl:SetAllPoints(btn)
+        btn:SetScript("OnEnter", function() hl:SetAlpha(0.15) end)
+        btn:SetScript("OnLeave", function() hl:SetAlpha(0) end)
+
+        local lbl = UI:NewText(btn, 10, color or UI.C_TEXT_NORMAL)
+        lbl:SetPoint("LEFT", 4, 0)
+        lbl:SetText(label)
+        if lbl.SetWordWrap then lbl:SetWordWrap(false) end
+
+        btn:SetScript("OnClick", function()
+            ctxMenu:Hide()
+            onClick()
+        end)
+        yOff = yOff - ITEM_H
+        ctxMenu._btns[#ctxMenu._btns + 1] = btn
+        return btn
+    end
+
+    local function addDivider()
+        local d = UI:NewTexture(ctxMenu, "ARTWORK", UI.C_BORDER)
+        d:SetPoint("TOPLEFT",  ctxMenu, "TOPLEFT",  4, yOff - 3)
+        d:SetPoint("TOPRIGHT", ctxMenu, "TOPRIGHT", -4, yOff - 3)
+        d:SetHeight(1)
+        yOff = yOff - 8
+        ctxMenu._btns[#ctxMenu._btns + 1] = d
+    end
+
+    -- Header (non-clickable)
+    local hdr = UI:NewText(ctxMenu, 9, UI.C_TEXT_DIM)
+    hdr:SetPoint("TOPLEFT", ctxMenu, "TOPLEFT", 8, yOff + 2)
+    hdr:SetText((itemName and itemName:upper() or "ITEM") .. " — ASSIGN CATEGORY")
+    yOff = yOff - 16
+    ctxMenu._btns[#ctxMenu._btns + 1] = hdr
+    addDivider()
+
+    -- Existing override indicator + remove option
+    local rules = WB.db.customRules or {}
+    local byId  = rules.byItemId or {}
+    if byId[itemID] then
+        addItem("Current: " .. byId[itemID], UI.C_GREEN, function() end)
+        addItem("Remove override", UI.C_TEXT_DIM, function()
+            byId[itemID] = nil
+            WB:Emit("BAGS_DIRTY")
+        end)
+        addDivider()
+    end
+
+    -- All categories, grouped by parent
+    local PARENT_ORDER = { "Consumable", "Equipment", "Trade Goods", "Misc" }
+    local parentSeen = {}
+    local grouped = {}
+    local ungrouped = {}
+
+    -- Collect built-in + user-defined cats, group by parent
+    local builtIn = {
+        "Potion","Elixir","Flask","Scroll","Food","Bandage","Consumable",
+        "Equipment","Totem",
+        "Cloth","Leather","Metal & Stone","Herb","Elemental",
+        "Enchanting","Jewelcrafting","Cooking","Trade Goods",
+        "Soul Shard","Mount","Pet","Misc",
+        "Quest","Recipe","Gem","Container","Key","Junk",
+    }
+    local seen = {}
+    local cats = {}
+    for _, n in ipairs(builtIn) do
+        if not seen[n] then seen[n] = true; cats[#cats + 1] = n end
+    end
+    if WB.db.userCats then
+        local unames = {}
+        for n in pairs(WB.db.userCats) do
+            if not seen[n] then unames[#unames + 1] = n end
+        end
+        table.sort(unames)
+        for _, n in ipairs(unames) do cats[#cats + 1] = n end
+    end
+
+    for _, cat in ipairs(cats) do
+        local parent = CT:GetParent(cat)
+        local isTopLevel = (parent == cat)
+        if isTopLevel then
+            ungrouped[#ungrouped + 1] = cat
+        else
+            if not grouped[parent] then grouped[parent] = {} end
+            grouped[parent][#grouped[parent] + 1] = cat
+        end
+    end
+
+    -- Emit grouped sections first, then standalone
+    for _, parent in ipairs(PARENT_ORDER) do
+        local children = grouped[parent]
+        if children and #children > 0 then
+            local grpHdr = UI:NewText(ctxMenu, 9, UI.C_TEXT_DIM)
+            grpHdr:SetPoint("TOPLEFT", ctxMenu, "TOPLEFT", 8, yOff)
+            grpHdr:SetText(parent:upper())
+            yOff = yOff - 14
+            ctxMenu._btns[#ctxMenu._btns + 1] = grpHdr
+            for _, cat in ipairs(children) do
+                local c = cat
+                addItem("  " .. cat, nil, function()
+                    if not WB.db.customRules then WB.db.customRules = {} end
+                    if not WB.db.customRules.byItemId then WB.db.customRules.byItemId = {} end
+                    WB.db.customRules.byItemId[itemID] = c
+                    WB:Emit("BAGS_DIRTY")
+                end)
+            end
+            addDivider()
+        end
+    end
+    for _, cat in ipairs(ungrouped) do
+        local c = cat
+        addItem(cat, nil, function()
+            if not WB.db.customRules then WB.db.customRules = {} end
+            if not WB.db.customRules.byItemId then WB.db.customRules.byItemId = {} end
+            WB.db.customRules.byItemId[itemID] = c
+            WB:Emit("BAGS_DIRTY")
+        end)
+    end
+
+    local totalH = -yOff + 4
+    ctxMenu:SetSize(MENU_W, totalH)
+    ctxMenu:ClearAllPoints()
+    local cx, cy = GetCursorPosition()
+    local s = UIParent:GetEffectiveScale()
+    ctxMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / s, cy / s)
+    ctxMenu:Show()
+    ctxMenu:Raise()
+end
+
+-- Expose on WB namespace so Bank.lua can reuse the same menu.
+WB.ShowCatMenu = showCatMenu
+
+-- ============================================================
 -- Slot widget
 -- ============================================================
 -- Buttons are pooled: created lazily, reused on every refresh. Each holds
@@ -222,10 +401,36 @@ local function buildSlot(parent, index)
         end
     end
 
+    -- Ctrl+right-click: show category assignment context menu.
+    -- OnMouseUp fires before the template's own right-click menu opens, so
+    -- returning here (after showing our menu) lets us suppress Blizzard's
+    -- default item context menu by consuming the event first.
+    b:HookScript("OnMouseUp", function(self, button)
+        if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
+           and self._itemID then
+            showCatMenu(self._itemID, self._itemName)
+        end
+    end)
+
     -- HookScript (not SetScript) — preserves the template's secure OnClick
     -- and OnReceiveDrag handlers. Our hooks only fire for FREE-tile cases
-    -- where the template's bag/slot dispatch wouldn't have a real target.
+    -- where the template's bag/slot dispatch wouldn't have a real target,
+    -- or for shift-click to open the category Rules panel.
     b:HookScript("OnClick", function(self, button)
+        -- Shift + left-click: open the Rules panel pre-filled for this item.
+        -- The template already picked up the item at this point, so we
+        -- immediately clear the cursor and open the panel instead.
+        if button == "LeftButton" and IsShiftKeyDown and IsShiftKeyDown()
+           and self._itemID and self._bag and self._slot then
+            if CursorHasItem and CursorHasItem() then
+                ClearCursor()
+            end
+            if WB.Options and WB.Options.OpenRulesForItem then
+                local name = self._itemName
+                WB.Options:OpenRulesForItem(self._itemID, name)
+            end
+            return
+        end
         if button == "LeftButton" and CursorHasItem and CursorHasItem()
            and (not self._bag or not self._slot) then
             dropIntoFirstEmpty()
@@ -269,6 +474,8 @@ end
 -- Apply current item state to a slot widget.
 local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locked, isNew)
     b._bag, b._slot = bag, slot
+    b._itemID = itemID
+    b._itemName = link and link:match("%[(.-)%]") or nil
     -- Wire the IDs the template's OnClick reads:
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end
@@ -810,9 +1017,45 @@ local function buildPanel()
         bagBar._slots[bag] = btn
     end
 
+    -- Keyring toggle icon — sits just left of the gold display.
+    -- Click to hide/show keyring slots. Grayed out when hidden.
+    local keyringBtn = CreateFrame("Button", nil, bagBar)
+    keyringBtn:SetSize(bagSlotSize, bagSlotSize)
+    keyringBtn:SetPoint("RIGHT", bagBar, "RIGHT", -6, 0)
+    keyringBtn:EnableMouse(true)
+    keyringBtn:RegisterForClicks("LeftButtonUp")
+    local keyringIcon = keyringBtn:CreateTexture(nil, "ARTWORK")
+    keyringIcon:SetPoint("TOPLEFT", 1, -1)
+    keyringIcon:SetPoint("BOTTOMRIGHT", -1, 1)
+    keyringIcon:SetTexture("Interface\\Icons\\INV_Misc_Key_14")
+    keyringIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    keyringBtn._icon = keyringIcon
+    UI:AddBorder(keyringBtn)
+    local function refreshKeyringBtn()
+        local hidden = WB.db.options.hideKeyring
+        keyringIcon:SetVertexColor(hidden and 0.4 or 1, hidden and 0.4 or 1, hidden and 0.4 or 1, 1)
+    end
+    refreshKeyringBtn()
+    keyringBtn:SetScript("OnClick", function()
+        WB.db.options.hideKeyring = not WB.db.options.hideKeyring
+        refreshKeyringBtn()
+        if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
+    end)
+    keyringBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("Keyring", 1, 1, 1)
+        GameTooltip:AddLine(WB.db.options.hideKeyring and "Click to show keyring" or "Click to hide keyring",
+            UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+        GameTooltip:Show()
+    end)
+    keyringBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    bagBar._keyringBtn = keyringBtn
+
     -- Gold display, anchored to the FAR RIGHT of the bottom bar.
+    -- Offset left by bagSlotSize+6 to leave room for the keyring button.
     local goldText = UI:NewText(bagBar, 11, UI.C_TEXT_NORMAL)
-    goldText:SetPoint("RIGHT", bagBar, "RIGHT", -8, 0)
+    goldText:SetPoint("RIGHT", bagBar, "RIGHT", -(bagSlotSize + 14), 0)
     goldText:SetText(UI:FormatMoney(GetMoney()))
     bagBar._gold = goldText
     panel._gold = goldText
@@ -1013,6 +1256,94 @@ local function transferItemsToBankStaggered(items)
     end
 end
 
+-- ============================================================
+-- Soul Shard aggregate tile
+-- ============================================================
+-- When the Soul Shard category is collapsed (default), a single tile shows
+-- the total count instead of individual slots. Clicking it toggles to the
+-- expanded view (normal individual slots) so the player can pick one up.
+-- State survives refreshes but resets on panel close.
+
+local soulShardExpanded = false   -- module-level toggle
+
+-- Pool of aggregate tiles (only ever need 1, but pooled to match the slot pattern)
+local aggTilePool = {}
+
+local function getAggTile(parent, index)
+    local b = aggTilePool[index]
+    if not b then
+        b = CreateFrame("Button", nil, parent)
+        b:EnableMouse(true)
+        b:RegisterForClicks("LeftButtonUp")
+
+        -- Icon
+        local iconTex = b:CreateTexture(nil, "ARTWORK")
+        iconTex:SetAllPoints(b)
+        iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        b._iconTex = iconTex
+
+        -- Count badge (bottom-right, matches normal slot count position)
+        local countTxt = b:CreateFontString(nil, "OVERLAY")
+        countTxt:SetFont("Fonts\\ARIALN.TTF", 14, "OUTLINE")
+        countTxt:SetPoint("BOTTOMRIGHT", -2, 2)
+        countTxt:SetTextColor(1, 1, 1, 1)
+        b._countTxt = countTxt
+
+        -- Collapse indicator (tiny "^" top-right)
+        local indTxt = b:CreateFontString(nil, "OVERLAY")
+        indTxt:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
+        indTxt:SetPoint("TOPRIGHT", -1, -1)
+        indTxt:SetTextColor(UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3], 0.8)
+        b._indTxt = indTxt
+
+        -- Quality border edges
+        local function edge(p1, p2, w, h)
+            local t = b:CreateTexture(nil, "OVERLAY")
+            t:SetPoint(p1); t:SetPoint(p2)
+            if w then t:SetWidth(w) end
+            if h then t:SetHeight(h) end
+            return t
+        end
+        local qTop    = edge("TOPLEFT",    "TOPRIGHT",    nil, 2)
+        local qBottom = edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 2)
+        local qLeft   = edge("TOPLEFT",    "BOTTOMLEFT",  2,   nil)
+        local qRight  = edge("TOPRIGHT",   "BOTTOMRIGHT", 2,   nil)
+        local function setQB(c)
+            for _, t in ipairs({ qTop, qBottom, qLeft, qRight }) do
+                t:SetColorTexture(c[1], c[2], c[3], c[4] or 1)
+            end
+        end
+        setQB({ 0.31, 0.78, 0.47, 0.6 })   -- fel-green tint for soul shards
+        b._setQB = setQB
+
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine("Soul Shards", UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3])
+            GameTooltip:AddLine(tostring(self._count or 0) .. " in bags", 1, 1, 1)
+            GameTooltip:AddLine("Click to " .. (soulShardExpanded and "collapse" or "expand"), UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        b:SetScript("OnClick", function()
+            soulShardExpanded = not soulShardExpanded
+            if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
+        end)
+
+        aggTilePool[index] = b
+    end
+    b:SetParent(parent)
+    b:Show()
+    return b
+end
+
+local function hideUnusedAggTiles(usedCount)
+    for i = usedCount + 1, #aggTilePool do
+        aggTilePool[i]:Hide()
+        aggTilePool[i]:ClearAllPoints()
+    end
+end
+
 local categoryHeaders = {}  -- pool of section-header font strings
 
 local function getCategoryHeader(parent, index)
@@ -1197,9 +1528,12 @@ local function gatherItems()
     -- space. Counting them inflates the FREE tile count by up to 32.
     local items = {}
     local filterBag = WB.db.ui and WB.db.ui._filterBag
+    local hideKeyring = WB.db.options.hideKeyring
     for _, bag in ipairs(BAG_IDS) do
         if filterBag ~= nil and bag ~= filterBag then
             -- skip non-filter bags
+        elseif hideKeyring and bag == KEYRING_CONTAINER then
+            -- keyring hidden by user toggle
         else
         local n = ns.GetContainerNumSlots(bag) or 0
         for slot = 1, n do
@@ -1394,7 +1728,8 @@ function BG:Refresh()
     local seenCat = {}
     local function addBlock(cat, bucket)
         if not bucket or #bucket == 0 then return end
-        local n = #bucket
+        -- Soul Shard collapsed: size for 1 tile, not N slots.
+        local n = (cat == "Soul Shard" and not soulShardExpanded) and 1 or #bucket
         local blkCols = math.min(n, MAX_COLS_PER_CAT)
         local blkRows = math.ceil(n / blkCols)
         blocks[#blocks + 1] = {
@@ -1527,12 +1862,18 @@ function BG:Refresh()
             if py + blk.h > subTotalH then subTotalH = py + blk.h end
         end
 
-        -- Container width: fit BOTH the slot grid AND the centered header
-        -- label (e.g. "ENCHANTING" is wider than a single slot, so a
-        -- single-item group still needs enough horizontal room).
-        local headerW = measureHeaderWidth(g.containerHeader) + 12
-        g.w = math.max(subMaxW + GROUP_PAD_X * 2, headerW)
-        g.h = GROUP_PAD_TOP + subTotalH + GROUP_PAD_BOT
+        -- Soul Shard collapsed: skip container padding — the tile renders bare.
+        if g.parent == "Soul Shard" and not soulShardExpanded then
+            g.w = slotSize
+            g.h = slotSize
+        else
+            -- Container width: fit BOTH the slot grid AND the centered header
+            -- label (e.g. "ENCHANTING" is wider than a single slot, so a
+            -- single-item group still needs enough horizontal room).
+            local headerW = measureHeaderWidth(g.containerHeader) + 12
+            g.w = math.max(subMaxW + GROUP_PAD_X * 2, headerW)
+            g.h = GROUP_PAD_TOP + subTotalH + GROUP_PAD_BOT
+        end
     end
 
     -- Pass 2: greedy masonry, tried over multiple orderings.
@@ -1665,79 +2006,89 @@ function BG:Refresh()
     local nextHeaderIdx = 1
     local nextSlotIdx   = 1
     local nextGroupIdx  = 0
+    local nextAggIdx    = 0
     for _, g in ipairs(groups) do
-        nextGroupIdx = nextGroupIdx + 1
-        local container = getGroupContainer(body, nextGroupIdx)
-        container:ClearAllPoints()
-        container:SetPoint("TOPLEFT", body, "TOPLEFT", g.x, -g.y)
-        container:SetSize(g.w, g.h)
-        container._label:SetText(g.containerHeader)
-        -- Subtle muted-green accent ring around the Recent container so new
-        -- items stand out at a glance without flashing or pulsing.
-        if container._setAccent then
-            container._setAccent(g.parent == "Recent" or g.containerHeader == "RECENT")
-        end
+        -- Soul Shard collapsed: bypass the group container entirely and place
+        -- the aggregate tile directly into the body so no header/border shows.
+        local isSoulShardCollapsed = (g.parent == "Soul Shard" and not soulShardExpanded)
 
-        -- Collect all items in this group for the group-header right-click transfer.
-        local groupItems = {}
-        for _, blk in ipairs(g.blocks) do
-            for _, it in ipairs(blk.items) do
-                if it.itemID then groupItems[#groupItems + 1] = it end
+        if isSoulShardCollapsed then
+            local blk = g.blocks[1]
+            if blk then
+                local totalShards = #blk.items
+                nextAggIdx = nextAggIdx + 1
+                local agg = getAggTile(body, nextAggIdx)
+                agg:SetSize(slotSize, slotSize)
+                agg:ClearAllPoints()
+                agg:SetPoint("TOPLEFT", body, "TOPLEFT", g.x, -g.y)
+                local shardIcon = blk.items[1] and blk.items[1].icon
+                if not shardIcon then
+                    local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(6265)
+                    shardIcon = tex
+                end
+                agg._iconTex:SetTexture(shardIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                agg._countTxt:SetText(tostring(totalShards))
+                agg._indTxt:SetText("v")
+                agg._count = totalShards
             end
-        end
-        container._groupItems = groupItems
-
-        local subBaseX = g.x + GROUP_PAD_X
-        local subBaseY = g.y + GROUP_PAD_TOP
-
-        for _, blk in ipairs(g.blocks) do
-            if not blk.skipHeader then
-                local h = getCategoryHeader(body, nextHeaderIdx)
-                nextHeaderIdx = nextHeaderIdx + 1
-                h:ClearAllPoints()
-                h:SetPoint("TOPLEFT", body, "TOPLEFT", subBaseX + blk.subX, -(subBaseY + blk.subY))
-                h:SetWidth(blk.w)
-                -- Label auto-sizes to its text now (single BOTTOM anchor),
-                -- so no SetWidth on the label — the frame's blk.w sets the
-                -- centering reference and the text auto-shrinks to fit.
-                h._label:SetText(blk.cat:upper())
-                -- Items for sub-category right-click transfer.
-                h._items = blk.items
+        else
+            nextGroupIdx = nextGroupIdx + 1
+            local container = getGroupContainer(body, nextGroupIdx)
+            container:ClearAllPoints()
+            container:SetPoint("TOPLEFT", body, "TOPLEFT", g.x, -g.y)
+            container:SetSize(g.w, g.h)
+            container._label:SetText(g.containerHeader)
+            if container._setAccent then
+                container._setAccent(g.parent == "Recent" or g.containerHeader == "RECENT")
             end
 
-            -- Always offset items by CATEGORY_H so single-sub groups (no
-            -- visible sub-header) align with multi-sub siblings on the row.
-            local slotsYOffset = CATEGORY_H
-            -- Center the slot grid horizontally within blk.w. When the
-            -- sub-header text is wider than the raw slot grid (e.g.
-            -- "JEWELCRAFTING" above 1 slot, "ENCHANTING" above 2), blk.w was
-            -- inflated to fit the header — without this offset the slots
-            -- would pack at the block's left edge while the header sits
-            -- centered, looking misaligned.
-            local slotsXOffset = math.floor((blk.w - blk.slotW) / 2)
-            if slotsXOffset < 0 then slotsXOffset = 0 end
-            for j, it in ipairs(blk.items) do
-                local col = (j - 1) % blk.cols
-                local row = math.floor((j - 1) / blk.cols)
-                local sx2 = subBaseX + blk.subX + slotsXOffset + col * SLOT_W
-                local sy2 = subBaseY + blk.subY + slotsYOffset + row * SLOT_W
-                local b = acquireSlot(body, nextSlotIdx)
-                nextSlotIdx = nextSlotIdx + 1
-                -- Position the HOST frame (the button is SetAllPoints-anchored
-                -- inside it, so it follows). Sizing the host also resizes
-                -- the button via the anchor relationship.
-                local host = b._host or b
-                host:SetSize(slotSize, slotSize)
-                host:ClearAllPoints()
-                host:SetPoint("TOPLEFT", body, "TOPLEFT", sx2, -sy2)
-                dressSlot(b, it.bag, it.slot, it.itemID, it.link, it.count, it.quality, it.icon, it.locked,
-                    isNewItem(it.itemID, currentCounts))
+            local groupItems = {}
+            for _, blk in ipairs(g.blocks) do
+                for _, it in ipairs(blk.items) do
+                    if it.itemID then groupItems[#groupItems + 1] = it end
+                end
+            end
+            container._groupItems = groupItems
+
+            local subBaseX = g.x + GROUP_PAD_X
+            local subBaseY = g.y + GROUP_PAD_TOP
+
+            for _, blk in ipairs(g.blocks) do
+                if not blk.skipHeader then
+                    local h = getCategoryHeader(body, nextHeaderIdx)
+                    nextHeaderIdx = nextHeaderIdx + 1
+                    h:ClearAllPoints()
+                    h:SetPoint("TOPLEFT", body, "TOPLEFT", subBaseX + blk.subX, -(subBaseY + blk.subY))
+                    h:SetWidth(blk.w)
+                    h._label:SetText(blk.cat:upper())
+                    h._items = blk.items
+                end
+
+                -- Soul Shard expanded: normal slot grid so the player can pick one up.
+                local slotsYOffset = CATEGORY_H
+                local slotsXOffset = math.floor((blk.w - blk.slotW) / 2)
+                if slotsXOffset < 0 then slotsXOffset = 0 end
+                for j, it in ipairs(blk.items) do
+                    local col = (j - 1) % blk.cols
+                    local row = math.floor((j - 1) / blk.cols)
+                    local sx2 = subBaseX + blk.subX + slotsXOffset + col * SLOT_W
+                    local sy2 = subBaseY + blk.subY + slotsYOffset + row * SLOT_W
+                    local b = acquireSlot(body, nextSlotIdx)
+                    nextSlotIdx = nextSlotIdx + 1
+                    local host = b._host or b
+                    host:SetSize(slotSize, slotSize)
+                    host:ClearAllPoints()
+                    host:SetPoint("TOPLEFT", body, "TOPLEFT", sx2, -sy2)
+                    dressSlot(b, it.bag, it.slot, it.itemID, it.link, it.count, it.quality, it.icon, it.locked,
+                        isNewItem(it.itemID, currentCounts))
+                end
             end
         end
     end
 
     hideUnusedHeaders(nextHeaderIdx - 1)
     hideUnusedGroups(nextGroupIdx)
+    hideUnusedAggTiles(nextAggIdx)
 
     -- Width is user-controlled. Height auto-fits to content + bottom buffer
     -- + bag-bar reservation when shown.
@@ -1815,6 +2166,7 @@ function BG:Hide()
     if not self.panel then return end
     if self.panel._snapPosition then self.panel._snapPosition() end
     self.panel:Hide()
+    soulShardExpanded = false   -- always start collapsed on next open
     WB.db.ui.hidden = true
     if WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel:IsShown() then
         WB.AltViewer:Hide()
