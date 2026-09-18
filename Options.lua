@@ -10,7 +10,7 @@ local UI = WB.UI
 WB.Options = {}
 local OP = WB.Options
 
-local PANEL_W, PANEL_H = 520, 420
+local PANEL_W, PANEL_H = 520, 436
 local ROW_H  = 22
 local COL_GAP = 8
 
@@ -487,15 +487,16 @@ end
 
 local function buildRulesTab(body)
     local RULE_ROW_H = 20
+    local LIST_TOP   = 16   -- header row (TYPE / MATCH / CATEGORY) above the list
     local LIST_H     = 180  -- height of the scrollable rule list
-    local FORM_Y     = LIST_H + 10
+    local FORM_Y     = LIST_TOP + LIST_H + 10
 
     -- --------------------------------------------------------
     -- Rule list (scrollable)
     -- --------------------------------------------------------
     local listClip = CreateFrame("Frame", nil, body)
-    listClip:SetPoint("TOPLEFT", 0, 0)
-    listClip:SetPoint("TOPRIGHT", 0, 0)
+    listClip:SetPoint("TOPLEFT", 0, -LIST_TOP)
+    listClip:SetPoint("TOPRIGHT", 0, -LIST_TOP)
     listClip:SetHeight(LIST_H)
     listClip:SetClipsChildren(true)
 
@@ -697,8 +698,8 @@ local function buildRulesTab(body)
 
     -- Divider between list and form
     local div = UI:NewTexture(body, "ARTWORK", UI.C_BORDER)
-    div:SetPoint("TOPLEFT",  body, "TOPLEFT",  0, -(LIST_H + 6))
-    div:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -(LIST_H + 6))
+    div:SetPoint("TOPLEFT",  body, "TOPLEFT",  0, -(LIST_TOP + LIST_H + 6))
+    div:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -(LIST_TOP + LIST_H + 6))
     div:SetHeight(1)
 
     -- --------------------------------------------------------
