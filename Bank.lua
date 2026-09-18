@@ -1333,10 +1333,22 @@ end
 -- Wire to events
 WB:On("LOGIN", function()
     BNK:Init()
-    suppressDefaultBank()
+    -- Blizzard's frame is deliberately left alone here. Hooking it taints
+    -- it, and a tainted BankFrame cannot run their PurchaseFirstSlot, the
+    -- call that grants the first character bank tab while it is free. The
+    -- hook goes on after the first bank visit instead.
 end)
 WB:On("BANK_OPENED", function()
     BNK:Show()
+    -- One frame later: Blizzard has finished showing and granting, so it
+    -- is safe to take their window out of the way and keep it there.
+    C_Timer.After(0, function()
+        suppressDefaultBank()
+        if BankFrame and BankFrame:IsShown() and not BankFrame._wicksRevealed
+           and WB.db.options.hideDefaultBank ~= false then
+            hideDefaultNow(BankFrame)
+        end
+    end)
     -- Auto-open the bag panel too so the user can drag items between
     -- without manually toggling it. Remember whether the bag was already
     -- open so we can restore state when the bank closes.
