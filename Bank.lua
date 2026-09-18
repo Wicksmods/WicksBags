@@ -88,9 +88,12 @@ local function nextBankSlotCost()
     return nil
 end
 
+-- C_Bank.PurchaseBankTab carries HasRestrictions, so a call from an addon
+-- is blocked and pops the "blocked from an action" dialog. The purchase has
+-- to be made in Blizzard's own bank window, so the button reveals it.
 local function purchaseBankSlot()
     if TAB_BANK then
-        if C_Bank.PurchaseBankTab then pcall(C_Bank.PurchaseBankTab, BANK_TYPE_CHAR) end
+        if WB.Bank and WB.Bank.RevealDefault then WB.Bank:RevealDefault() end
         return
     end
     if not PurchaseSlot then return end
@@ -639,8 +642,12 @@ local function buildPanel()
         if cost then
             GameTooltip:SetOwner(buyBtn, "ANCHOR_TOP")
             GameTooltip:AddLine(TAB_BANK and "Buy next bank tab" or "Buy next bank bag slot", 1, 1, 1)
-            GameTooltip:AddLine("Cost: " .. UI:FormatMoney(cost),
+            GameTooltip:AddLine(cost > 0 and ("Cost: " .. UI:FormatMoney(cost)) or "Free",
                 UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            if TAB_BANK then
+                GameTooltip:AddLine("Opens Blizzard's bank window, which is where the purchase has to be made.",
+                    UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3], true)
+            end
             GameTooltip:Show()
         end
     end)
@@ -1264,25 +1271,62 @@ end
 -- our panel. Instead, leave it Shown but invisible: alpha=0, mouse off,
 -- pushed offscreen so it can't intercept clicks. Blizzard still treats
 -- it as the active bank UI and syncs slot data normally.
+-- Blizzard's OnShow runs SelectDefaultTab -> SetTab -> PurchaseFirstSlot,
+-- which grants the first character bank tab while it is free. Touching
+-- BankFrame inside that chain taints it and the grant is blocked, which
+-- leaves the character with no tabs and an apparently full bank. So the
+-- suppression waits a frame and runs after Blizzard is finished.
+local function stashAnchor(f)
+    if f._wicksAnchor then return end
+    local point, rel, relPoint, x, y = f:GetPoint()
+    f._wicksAnchor = { point or "CENTER", rel, relPoint or "CENTER", x or 0, y or 0 }
+end
+
+local function hideDefaultNow(f)
+    stashAnchor(f)
+    f:SetAlpha(0)
+    f:EnableMouse(false)
+    f:EnableKeyboard(false)
+    f:ClearAllPoints()
+    f:SetPoint("LEFT", UIParent, "RIGHT", 100, 0)
+end
+
+local function showDefaultNow(f)
+    f:SetAlpha(1)
+    f:EnableMouse(true)
+    f:EnableKeyboard(true)
+    local a = f._wicksAnchor
+    f:ClearAllPoints()
+    if a and a[2] then f:SetPoint(a[1], a[2], a[3], a[4], a[5]) else f:SetPoint("CENTER") end
+end
+
+-- Show Blizzard's bank window so the player can buy a tab there, and step
+-- our panel out of the way until the bank closes.
+function BNK:RevealDefault()
+    if not BankFrame then return end
+    BankFrame._wicksRevealed = true
+    showDefaultNow(BankFrame)
+    if self.panel then self.panel:Hide() end
+    if WB.A then WB.A:Print("buying a bank tab has to be done in Blizzard's bank window. Close it to come back here.") end
+end
+
 local function suppressDefaultBank()
     if not BankFrame then return end
     if BankFrame._wicksHooked then return end
     BankFrame._wicksHooked = true
     BankFrame:HookScript("OnShow", function(self)
-        if WB.db.options.hideDefaultBank ~= false then
-            self:SetAlpha(0)
-            self:EnableMouse(false)
-            self:EnableKeyboard(false)
-            self:ClearAllPoints()
-            self:SetPoint("LEFT", UIParent, "RIGHT", 100, 0)
-        end
+        if WB.db.options.hideDefaultBank == false or self._wicksRevealed then return end
+        -- Deferred by one frame: Blizzard finishes its own show chain first.
+        C_Timer.After(0, function()
+            if self:IsShown() and not self._wicksRevealed
+               and WB.db.options.hideDefaultBank ~= false then
+                hideDefaultNow(self)
+            end
+        end)
     end)
     BankFrame:HookScript("OnHide", function(self)
-        -- Reset alpha/mouse so the frame works normally if user toggles
-        -- hideDefaultBank off later.
-        self:SetAlpha(1)
-        self:EnableMouse(true)
-        self:EnableKeyboard(true)
+        self._wicksRevealed = nil
+        showDefaultNow(self)
     end)
 end
 
