@@ -37,7 +37,11 @@ local NUM_BAGS      = 4   -- TBC: 0 (backpack) + 1..4
 local KEYRING_CONTAINER = (Enum and Enum.BagIndex and Enum.BagIndex.Keyring) or -2
 -- Iteration list — backpack, 4 carry bags, plus the keyring so quest keys
 -- and dungeon keys show up alongside regular items.
+-- Reagent bag: a fifth carry slot on Forever. Absent on TBC, and empty
+-- here until one is equipped, so it costs nothing to always look.
+local REAGENT_CONTAINER = Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag
 local BAG_IDS = { 0, 1, 2, 3, 4, KEYRING_CONTAINER }
+if REAGENT_CONTAINER then table.insert(BAG_IDS, 5, REAGENT_CONTAINER) end
 
 -- ============================================================
 -- Category context menu (ctrl+right-click a slot)
@@ -1306,14 +1310,23 @@ local function transferItemsToBankStaggered(items)
 end
 
 -- ============================================================
--- Soul Shard aggregate tile
+-- Bulk category tiles
 -- ============================================================
--- When the Soul Shard category is collapsed (default), a single tile shows
--- the total count instead of individual slots. Clicking it toggles to the
--- expanded view (normal individual slots) so the player can pick one up.
--- State survives refreshes but resets on panel close.
+-- Some categories are a number, not a grid. A soul bag of shards, a quiver
+-- of arrows and a pouch of reagents all read better as one tile with a
+-- total than as twenty identical icons. Those categories collapse by
+-- default; clicking the tile expands it to real slots so the player can
+-- pick one up. State survives refreshes and resets on panel close.
 
-local soulShardExpanded = false   -- module-level toggle
+local BULK = {
+    ["Soul Shard"] = { label = "Soul Shards",  accent = { 0.31, 0.78, 0.47, 0.6 } },
+    ["Projectile"] = { label = "Ammunition",   accent = { 0.62, 0.55, 0.36, 0.6 } },
+    ["Reagent"]    = { label = "Reagents",     accent = { 0.45, 0.55, 0.72, 0.6 } },
+}
+local expanded = {}   -- category -> true while the player has opened it
+
+local function isBulk(cat) return BULK[cat] ~= nil end
+local function isCollapsed(cat) return isBulk(cat) and not expanded[cat] end
 
 -- Pool of aggregate tiles (only ever need 1, but pooled to match the slot pattern)
 local aggTilePool = {}
@@ -1362,20 +1375,24 @@ local function getAggTile(parent, index)
                 t:SetColorTexture(c[1], c[2], c[3], c[4] or 1)
             end
         end
-        setQB({ 0.31, 0.78, 0.47, 0.6 })   -- fel-green tint for soul shards
+        setQB({ 0.31, 0.78, 0.47, 0.6 })
         b._setQB = setQB
 
         b:SetScript("OnEnter", function(self)
+            local def = BULK[self._cat] or {}
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Soul Shards", UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3])
-            GameTooltip:AddLine(tostring(self._count or 0) .. " in bags", 1, 1, 1)
-            GameTooltip:AddLine("Click to " .. (soulShardExpanded and "collapse" or "expand"), UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            GameTooltip:AddLine(def.label or self._cat or "Items", UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3])
+            GameTooltip:AddLine(("%d in bags"):format(self._count or 0), 1, 1, 1)
+            if (self._slots or 0) > 1 then
+                GameTooltip:AddLine(("across %d slots"):format(self._slots), UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
+            end
+            GameTooltip:AddLine("Click to expand", UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        b:SetScript("OnClick", function()
-            soulShardExpanded = not soulShardExpanded
+        b:SetScript("OnClick", function(self)
+            if self._cat then expanded[self._cat] = not expanded[self._cat] end
             if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
         end)
 
@@ -1777,8 +1794,8 @@ function BG:Refresh()
     local seenCat = {}
     local function addBlock(cat, bucket)
         if not bucket or #bucket == 0 then return end
-        -- Soul Shard collapsed: size for 1 tile, not N slots.
-        local n = (cat == "Soul Shard" and not soulShardExpanded) and 1 or #bucket
+        -- Collapsed bulk category: size for one tile, not N slots.
+        local n = isCollapsed(cat) and 1 or #bucket
         local blkCols = math.min(n, MAX_COLS_PER_CAT)
         local blkRows = math.ceil(n / blkCols)
         blocks[#blocks + 1] = {
@@ -1911,8 +1928,8 @@ function BG:Refresh()
             if py + blk.h > subTotalH then subTotalH = py + blk.h end
         end
 
-        -- Soul Shard collapsed: skip container padding — the tile renders bare.
-        if g.parent == "Soul Shard" and not soulShardExpanded then
+        -- Collapsed: skip container padding, the tile renders bare.
+        if isCollapsed(g.parent) then
             g.w = slotSize
             g.h = slotSize
         else
@@ -2057,28 +2074,31 @@ function BG:Refresh()
     local nextGroupIdx  = 0
     local nextAggIdx    = 0
     for _, g in ipairs(groups) do
-        -- Soul Shard collapsed: bypass the group container entirely and place
-        -- the aggregate tile directly into the body so no header/border shows.
-        local isSoulShardCollapsed = (g.parent == "Soul Shard" and not soulShardExpanded)
-
-        if isSoulShardCollapsed then
+        -- Collapsed: bypass the group container entirely and place the tile
+        -- straight into the body, so no header or border shows around it.
+        if isCollapsed(g.parent) then
             local blk = g.blocks[1]
             if blk then
-                local totalShards = #blk.items
+                -- The number that matters is how many arrows or shards are
+                -- carried, not how many slots they sit in.
+                local total, slots = 0, #blk.items
+                for _, it in ipairs(blk.items) do total = total + (it.count or 1) end
                 nextAggIdx = nextAggIdx + 1
                 local agg = getAggTile(body, nextAggIdx)
                 agg:SetSize(slotSize, slotSize)
                 agg:ClearAllPoints()
                 agg:SetPoint("TOPLEFT", body, "TOPLEFT", g.x, -g.y)
-                local shardIcon = blk.items[1] and blk.items[1].icon
-                if not shardIcon then
+                local icon = blk.items[1] and blk.items[1].icon
+                if not icon and g.parent == "Soul Shard" then
                     local _, _, _, _, _, _, _, _, _, tex = ns.GetItemInfo(6265)
-                    shardIcon = tex
+                    icon = tex
                 end
-                agg._iconTex:SetTexture(shardIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                agg._countTxt:SetText(tostring(totalShards))
+                agg._iconTex:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                agg._countTxt:SetText(total > 999 and ("%.1fk"):format(total / 1000) or tostring(total))
                 agg._indTxt:SetText("v")
-                agg._count = totalShards
+                agg._cat, agg._count, agg._slots = g.parent, total, slots
+                local def = BULK[g.parent]
+                if def and agg._setQB then agg._setQB(def.accent) end
             end
         else
             nextGroupIdx = nextGroupIdx + 1
@@ -2215,7 +2235,7 @@ function BG:Hide()
     if not self.panel then return end
     if self.panel._snapPosition then self.panel._snapPosition() end
     self.panel:Hide()
-    soulShardExpanded = false   -- always start collapsed on next open
+    wipe(expanded)   -- bulk categories always start collapsed on next open
     WB.db.ui.hidden = true
     if WB.AltViewer and WB.AltViewer.panel and WB.AltViewer.panel:IsShown() then
         WB.AltViewer:Hide()
