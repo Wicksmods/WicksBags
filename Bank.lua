@@ -1310,7 +1310,20 @@ function BNK:RevealDefault()
     if WB.A then WB.A:Print("buying a bank tab has to be done in Blizzard's bank window. Close it to come back here.") end
 end
 
+-- While the character has no tabs, Blizzard's window is the only thing
+-- that can give them one. SetTab calls PurchaseFirstSlot, which calls the
+-- restricted PurchaseBankTab, and that only works from untainted code.
+-- Moving their frame or hooking its scripts taints it for the session, so
+-- until the first tab exists we keep our hands off entirely: no hook, no
+-- reposition, no hiding. It costs one bank visit looking like the stock
+-- UI, and the alternative is a character that can never buy a tab at all.
+local function grantStillPending()
+    return TAB_BANK and numPurchasedBankSlots() == 0
+end
+WB.Bank.GrantPending = grantStillPending
+
 local function suppressDefaultBank()
+    if grantStillPending() then return end
     if not BankFrame then return end
     if BankFrame._wicksHooked then return end
     BankFrame._wicksHooked = true
@@ -1343,6 +1356,16 @@ WB:On("BANK_OPENED", function()
     -- One frame later: Blizzard has finished showing and granting, so it
     -- is safe to take their window out of the way and keep it there.
     C_Timer.After(0, function()
+        if grantStillPending() then
+            -- Say it once per character rather than leaving them to wonder
+            -- why the stock window turned up instead of ours.
+            if WB.A and not BNK._saidGrantPending then
+                BNK._saidGrantPending = true
+                WB.A:Print("your first bank tab is free, but only Blizzard's own window can grant it, so it stays in charge this visit. Ours takes over once you have a tab.")
+            end
+            if BNK.panel then BNK.panel:Hide() end
+            return
+        end
         suppressDefaultBank()
         if BankFrame and BankFrame:IsShown() and not BankFrame._wicksRevealed
            and WB.db.options.hideDefaultBank ~= false then
@@ -1376,6 +1399,22 @@ WB:On("BANK_CLOSED", function()
     end
     BNK._bagWasOpen = nil
 end)
+-- The free tab has just landed. Blizzard is done with the thing it needed
+-- an untainted frame for, so take over without making them close and
+-- reopen the bank.
+WB:On("BANK_TABS_CHANGED", function()
+    if grantStillPending() then return end
+    if not (BankFrame and BankFrame:IsShown()) then return end
+    if WB.db.options.hideDefaultBank == false then return end
+    C_Timer.After(0, function()
+        suppressDefaultBank()
+        if BankFrame and BankFrame:IsShown() and not BankFrame._wicksRevealed then
+            hideDefaultNow(BankFrame)
+        end
+        BNK:Show()
+    end)
+end)
+
 WB:On("BANK_DIRTY", function() BNK:Refresh() end)
 -- Also refresh on regular bag updates if bank panel is open (cross-bag moves
 -- update both panels' content in some Blizzard event fires).

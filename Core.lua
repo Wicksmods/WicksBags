@@ -374,6 +374,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         autoCloseBag()
     elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" or event == "BANK_TABS_CHANGED" then
         scheduleBankRefresh()
+        if event == "BANK_TABS_CHANGED" then WB:Emit("BANK_TABS_CHANGED") end
     elseif event == "MERCHANT_SHOW" or event == "MAIL_SHOW"
         or event == "AUCTION_HOUSE_SHOW" or event == "TRADE_SKILL_SHOW" then
         suppressBlizzBags()
