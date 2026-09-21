@@ -1302,6 +1302,53 @@ end
 
 -- Show Blizzard's bank window so the player can buy a tab there, and step
 -- our panel out of the way until the bank closes.
+-- /wbags bank. Three attempts at this have each been a guess about which
+-- part is refusing; this asks the client directly and prints what it says.
+function BNK:Diagnose(print_)
+    print_(("tab bank: %s"):format(tostring(TAB_BANK)))
+    if not (TAB_BANK and C_Bank) then
+        print_("legacy bank model, nothing more to report.")
+        return
+    end
+    local function ask(fn, ...)
+        if not C_Bank[fn] then return "no such call" end
+        local ok, v = pcall(C_Bank[fn], ...)
+        if not ok then return "errored" end
+        if type(v) == "table" then
+            local bits = {}
+            for k, val in pairs(v) do bits[#bits + 1] = tostring(k) .. "=" .. tostring(val) end
+            table.sort(bits)
+            return "{" .. table.concat(bits, " ") .. "}"
+        end
+        return tostring(v)
+    end
+    print_("purchased tabs: " .. ask("FetchNumPurchasedBankTabs", BANK_TYPE_CHAR))
+    print_("max tabs: " .. ask("FetchMaxNumBankTabs", BANK_TYPE_CHAR))
+    print_("has max: " .. ask("HasMaxBankTabs", BANK_TYPE_CHAR))
+    print_("can purchase: " .. ask("CanPurchaseBankTab", BANK_TYPE_CHAR))
+    print_("can use bank: " .. ask("CanUseBank", BANK_TYPE_CHAR))
+    print_("next tab: " .. ask("FetchNextPurchasableBankTabData", BANK_TYPE_CHAR))
+    print_("locked reason: " .. ask("FetchBankLockedReason", BANK_TYPE_CHAR))
+
+    local bf = rawget(_G, "BankFrame")
+    print_(("BankFrame: %s, hooked by us %s, moved by us %s, shown %s")
+        :format(bf and "exists" or "missing",
+                tostring(bf and bf._wicksHooked or false),
+                tostring(bf and bf._wicksAnchor ~= nil or false),
+                tostring(bf and bf:IsShown() or false)))
+    -- Whether our code is the thing in the way, which is the question
+    -- every previous attempt got wrong.
+    local issecure = rawget(_G, "issecurevariable")
+    if issecure and bf then
+        local ok, secure, culprit = pcall(issecure, bf, "SetTab")
+        if ok then print_(("BankFrame.SetTab secure: %s%s"):format(tostring(secure),
+            culprit and (", tainted by " .. tostring(culprit)) or "")) end
+    end
+    print_(("grant pending: %s   hideDefaultBank: %s")
+        :format(tostring(WB.Bank.GrantPending and WB.Bank.GrantPending()),
+                tostring(WB.db and WB.db.options and WB.db.options.hideDefaultBank)))
+end
+
 function BNK:RevealDefault()
     if not BankFrame then return end
     BankFrame._wicksRevealed = true

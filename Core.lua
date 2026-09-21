@@ -407,6 +407,10 @@ A:RegisterSlash(function(_, input)
         return
     end
     if input == "alts" and WB.AltViewer then WB.AltViewer:Toggle() return end
+    if input == "bank" then
+        if WB.Bank and WB.Bank.Diagnose then WB.Bank:Diagnose(function(l) A:Print(l) end) end
+        return
+    end
     if input == "sort" then
         if C_Container and C_Container.SortBags and not InCombatLockdown() then C_Container.SortBags() end
         return
