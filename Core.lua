@@ -412,6 +412,21 @@ A:RegisterSlash(function(_, input)
         return
     end
     if input == "alts" and WB.AltViewer then WB.AltViewer:Toggle() return end
+    if input == "defaultbank" then
+        -- Suppressing Blizzard's bank window means writing to their
+        -- BankFrame: alpha, mouse, anchors. That write taints the frame,
+        -- and their own ContainerFrameItemButton_OnClick reads it through
+        -- BankFrame:GetActiveBankType, which is why right-clicking an
+        -- item throws "blocked from an action" most often at the bank.
+        -- Turning this off leaves their frame alone, at the cost of
+        -- seeing it. It is the one way to tell whether that write is the
+        -- cause, so it is reachable from here.
+        local o = WB.db.options
+        o.hideDefaultBank = (o.hideDefaultBank == false) and true or false
+        A:Print(("Blizzard's bank window is now %s. Reload for it to take effect."):format(
+            o.hideDefaultBank == false and "left alone (shown)" or "hidden by us"))
+        return
+    end
     if input == "bank" then
         if WB.Bank and WB.Bank.Diagnose then WB.Bank:Diagnose(function(l) A:Print(l) end) end
         return
@@ -423,6 +438,7 @@ A:RegisterSlash(function(_, input)
     if input == "help" or input == "?" then
         A:Print("commands")
         print("  /wbags                 toggle the panel")
+        print("  /wbags defaultbank     show or hide Blizzard's own bank window")
         print("  /wbags show | hide     show or hide")
         print("  /wbags options         open options")
         print("  /wbags alts            open the alt inventory viewer")
