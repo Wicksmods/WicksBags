@@ -132,14 +132,18 @@ function ns.SetSlotUse(button, bag, slot)
     end
     button._useStale = nil
     if bag and slot then
-        button:SetAttribute("type2", "item")
-        button:SetAttribute("bag", bag)
-        button:SetAttribute("slot", slot)
+        -- A macro, not type="item" with bag and slot. That pair is the
+        -- Classic dispatcher's form and this client is Mainline shaped:
+        -- setting it changed nothing and right-click stayed dead. "/use
+        -- <bag> <slot>" is a macro command in every version, and macro
+        -- text on a secure button is the mechanism the feed, travel form
+        -- and stance buttons in this suite already run on here.
+        button:SetAttribute("type2", "macro")
+        button:SetAttribute("macrotext2", ("/use %d %d"):format(bag, slot))
     else
         -- An empty slot or the free-space tile: nothing to use.
         button:SetAttribute("type2", nil)
-        button:SetAttribute("bag", nil)
-        button:SetAttribute("slot", nil)
+        button:SetAttribute("macrotext2", nil)
     end
     return true
 end
@@ -487,9 +491,9 @@ A:RegisterSlash(function(_, input)
         A:Print(("slot frame type %s, template %s"):format(tostring(ns.SLOT_FRAME_TYPE), tostring(ns.SLOT_TEMPLATE)))
         A:Print(("OnClick set: %s   is SecureActionButton_OnClick: %s   that global exists: %s"):format(
             tostring(script ~= nil), tostring(script ~= nil and secure ~= nil and script == secure), tostring(secure ~= nil)))
-        A:Print(("attributes: type2=%s bag=%s slot=%s   item here: %s"):format(
-            tostring(b:GetAttribute("type2")), tostring(b:GetAttribute("bag")),
-            tostring(b:GetAttribute("slot")), tostring(b._itemID)))
+        A:Print(("attributes: type2=%s macrotext2=%s   item here: %s"):format(
+            tostring(b:GetAttribute("type2")), tostring(b:GetAttribute("macrotext2")),
+            tostring(b._itemID)))
         A:Print(("registered for right-click: %s"):format(
             tostring(b.GetAttribute and b:GetAttribute("_wicksClicks") or "unknown")))
         local pm = b.IsProtected and select(1, b:IsProtected())
