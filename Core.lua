@@ -86,74 +86,7 @@ local function slotFrameType()
     end
     return "Button"
 end
--- Kept for reference: this is what the container template wanted. The
--- slots no longer use that template, so the answer is no longer used.
-ns.CONTAINER_TEMPLATE_TYPE = slotFrameType()
-
--- ============================================================
--- Using an item from a slot
--- ============================================================
--- UseContainerItem is protected, and a button this addon created carries
--- this addon's taint, so the template's own OnClick could not complete
--- it: right-clicking anything in the bags printed "blocked from an
--- action". Confirmed from a taint log, the whole chain being
--- ContainerFrameItemButton_OnClick -> BankFrame:GetActiveBankType ->
--- blocked UseContainerItem.
---
--- The way through is the secure button the game provides for exactly
--- this. type2/bag/slot hand the right-click to SecureActionButton_OnClick,
--- which runs in the secure environment and uses the item itself. Nothing
--- of ours is on that path, so there is nothing to taint.
---
--- Left-click stays ours: picking an item up is not protected.
--- Inheriting both templates did not work: the client reported the slot's
--- OnClick set and not equal to SecureActionButton_OnClick, so the
--- container template's handler won and the attributes below were never
--- read. Right-click did nothing at all, which was worse than the error
--- it replaced.
---
--- So the container template is gone. A plain Button with only
--- SecureActionButtonTemplate gets that template's own XML-defined
--- OnClick, which is secure because Blizzard declared it, not us. We
--- already draw every region ourselves (icon, count, quality border,
--- cooldown, item level) and neutered theirs, so nothing is lost but the
--- handler that could not work.
-ns.SLOT_FRAME_TYPE = "Button"
-ns.SLOT_TEMPLATE = "SecureActionButtonTemplate"
-
--- Attributes may not be written to a secure button in combat. A slot
--- whose item changed mid-fight keeps the old pair until it ends, which
--- is the same rule every action bar lives by.
-function ns.SetSlotUse(button, bag, slot)
-    if not button or not button.SetAttribute then return false end
-    if InCombatLockdown and InCombatLockdown() then
-        button._useStale = true
-        return false
-    end
-    button._useStale = nil
-    if bag and slot then
-        -- A macro, not type="item" with bag and slot. That pair is the
-        -- Classic dispatcher's form and this client is Mainline shaped:
-        -- setting it changed nothing and right-click stayed dead. "/use
-        -- <bag> <slot>" is a macro command in every version, and macro
-        -- text on a secure button is the mechanism the feed, travel form
-        -- and stance buttons in this suite already run on here.
-        button:SetAttribute("type2", "macro")
-        button:SetAttribute("macrotext2", ("/use %d %d"):format(bag, slot))
-        -- Ctrl plus right-click opens the category menu, so it must not
-        -- also use the item. A modified attribute with empty text wins
-        -- over the plain one and does nothing.
-        button:SetAttribute("ctrl-type2", "macro")
-        button:SetAttribute("ctrl-macrotext2", "")
-    else
-        -- An empty slot or the free-space tile: nothing to use.
-        button:SetAttribute("type2", nil)
-        button:SetAttribute("macrotext2", nil)
-        button:SetAttribute("ctrl-type2", nil)
-        button:SetAttribute("ctrl-macrotext2", nil)
-    end
-    return true
-end
+ns.SLOT_FRAME_TYPE = slotFrameType()
 
 -- The icon texture and stack count of a slot button, whichever way the
 -- client keys them (retail parentKey, TBC global name), or our own regions
@@ -368,9 +301,6 @@ local EVENTS = {
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_CLOSE",
     "PLAYER_LOGOUT",
-    -- A slot whose item changed during a fight could not have its secure
-    -- attributes rewritten, so the pair it carries is stale until now.
-    "PLAYER_REGEN_ENABLED",
 }
 for _, e in ipairs(EVENTS) do
     pcall(f.RegisterEvent, f, e)
@@ -457,11 +387,6 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "MERCHANT_CLOSED" or event == "MAIL_CLOSED"
         or event == "AUCTION_HOUSE_CLOSED" or event == "TRADE_SKILL_CLOSE" then
         autoCloseBag()
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Redress every slot so the ones that could not take their secure
-        -- attributes mid-fight get them now.
-        if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
-        if WB.Bank and WB.Bank.Refresh then WB.Bank:Refresh() end
     elseif event == "PLAYER_LOGOUT" then
         for _, mod in ipairs({ WB.Bag, WB.Bank, WB.AltViewer }) do
             if mod and mod.panel and mod.panel._snapPosition then mod.panel._snapPosition() end
@@ -487,33 +412,6 @@ A:RegisterSlash(function(_, input)
         return
     end
     if input == "alts" and WB.AltViewer then WB.AltViewer:Toggle() return end
-    if input == "click" then
-        -- Which OnClick a slot actually ended up with, and what it
-        -- carries. Right-click doing nothing means the secure handler is
-        -- not the one attached, and this says so rather than guessing.
-        local b = _G.WicksBagsSlot1
-        if not b then A:Print("no slot built yet; open the bags first.") return end
-        local script = b:GetScript("OnClick")
-        local secure = rawget(_G, "SecureActionButton_OnClick")
-        A:Print(("slot frame type %s, template %s"):format(tostring(ns.SLOT_FRAME_TYPE), tostring(ns.SLOT_TEMPLATE)))
-        -- Whether OnClick equals the secure function is not a useful
-        -- question once anything has hooked it. What matters is that we
-        -- never took it over, and that PostClick carries our own work.
-        A:Print(("OnClick set: %s   ours (we must never set it): %s   PostClick set: %s   secure fn exists: %s"):format(
-            tostring(script ~= nil), tostring(b._wicksOwnsClick == true),
-            tostring(b:GetScript("PostClick") ~= nil), tostring(secure ~= nil)))
-        A:Print(("attributes: type2=%s macrotext2=%s   item here: %s"):format(
-            tostring(b:GetAttribute("type2")), tostring(b:GetAttribute("macrotext2")),
-            tostring(b._itemID)))
-        -- What we asked RegisterForClicks for. Mislabelled before as
-        -- "right-click", which read like the client answering when it
-        -- was only this addon repeating itself.
-        A:Print(("we registered for clicks: %s"):format(
-            tostring(b.GetAttribute and b:GetAttribute("_wicksClicks") or "unknown")))
-        local pm = b.IsProtected and select(1, b:IsProtected())
-        A:Print(("protected: %s   in combat: %s"):format(tostring(pm), tostring(InCombatLockdown and InCombatLockdown())))
-        return
-    end
     if input == "bank" then
         if WB.Bank and WB.Bank.Diagnose then WB.Bank:Diagnose(function(l) A:Print(l) end) end
         return

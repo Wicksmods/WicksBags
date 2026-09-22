@@ -233,30 +233,22 @@ local slotPool = {}
 local slotInUse = {}
 
 local function buildSlot(parent, index)
-    -- A plain Button with SecureActionButtonTemplate. Right-click is
-    -- dispatched by Blizzard's own secure handler through type2/bag/slot,
-    -- which is the only way to reach the protected UseContainerItem from
-    -- a button an addon created. Every region is ours. See ns.SetSlotUse.
+    -- Use Blizzard's ContainerFrameItemButtonTemplate — its built-in
+    -- OnClick handles secure dispatch correctly for ALL items (potions,
+    -- food, bandages, mounts, gear, containers). Pattern lifted from
+    -- BetterBags TBC: a hidden host Button whose :GetID() returns the
+    -- bag number, with the actual item button inside. Blizzard's template
+    -- calls UseContainerItem(self:GetParent():GetID(), self:GetID()),
+    -- so host:SetID(bag) + button:SetID(slot) wires it up correctly.
     local host = CreateFrame("Button", nil, parent)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
     local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBagsSlot" .. index, host,
-        ns.SLOT_TEMPLATE)
-    -- Dragging an item out was the container template's job. Picking up
-    -- is not protected, so it is ours now.
-    b:SetScript("OnDragStart", function(self)
-        if self._bag and self._slot and ns.PickupContainerItem then
-            ns.PickupContainerItem(self._bag, self._slot)
-        end
-    end)
+        "ContainerFrameItemButtonTemplate")
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
-    -- AnyUp, not the named pair. Every secure button in this suite that
-    -- works on this client registers this way, and the named form left
-    -- the dispatcher silent. One edge, so PostClick fires once per click.
-    b:RegisterForClicks("AnyUp")
-    b:SetAttribute("_wicksClicks", "AnyUp")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     -- Hide the template's pushed/normal textures so our quality-border
     -- treatment isn't covered by Blizzard's default frame art.
     if b.GetPushedTexture and b:GetPushedTexture() then
@@ -414,7 +406,7 @@ local function buildSlot(parent, index)
     -- OnMouseUp fires before the template's own right-click menu opens, so
     -- returning here (after showing our menu) lets us suppress Blizzard's
     -- default item context menu by consuming the event first.
-    b:SetScript("OnMouseUp", function(self, button)
+    b:HookScript("OnMouseUp", function(self, button)
         if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
            and self._itemID then
             showCatMenu(self._itemID, self._itemName)
@@ -425,21 +417,7 @@ local function buildSlot(parent, index)
     -- and OnReceiveDrag handlers. Our hooks only fire for FREE-tile cases
     -- where the template's bag/slot dispatch wouldn't have a real target,
     -- or for shift-click to open the category Rules panel.
-    -- PostClick, never OnClick. Hooking a secure button's OnClick taints
-    -- the handler, and a tainted handler cannot complete the protected
-    -- call inside it: the attributes were right and right-click still did
-    -- nothing. PreClick and PostClick exist so an addon can add to a
-    -- secure button without standing in its way. This runs after the
-    -- secure dispatch, which is what we want for everything here.
-    b:SetScript("PostClick", function(self, button)
-        -- Left-click picks the item up. Right-click is the secure
-        -- handler's, set through type2/bag/slot, and never comes here.
-        -- Picking up is not protected, so this one is ours to do.
-        if button == "LeftButton" and self._bag and self._slot
-           and not (IsShiftKeyDown and IsShiftKeyDown()) then
-            if ns.PickupContainerItem then ns.PickupContainerItem(self._bag, self._slot) end
-            return
-        end
+    b:HookScript("OnClick", function(self, button)
         -- Shift + left-click: open the Rules panel pre-filled for this item.
         -- The template already picked up the item at this point, so we
         -- immediately clear the cursor and open the panel instead.
@@ -503,8 +481,6 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end
     b:SetID(slot or 0)
-    -- Right-click uses the item, through the secure handler.
-    ns.SetSlotUse(b, itemID and bag or nil, itemID and slot or nil)
     -- Re-kill template overlays in case the template re-shows them in
     -- response to mouseover/refresh events (this is the source of the
     -- "stuck green ring" — IconBorder gets re-applied with quality color).

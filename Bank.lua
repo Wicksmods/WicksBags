@@ -147,21 +147,11 @@ local function buildSlot(parent, index)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
     local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBankSlot" .. index, host,
-        ns.SLOT_TEMPLATE)
+        "ContainerFrameItemButtonTemplate")
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
-    -- Dragging an item out was the container template's job. Picking up
-    -- is not protected, so it is ours now.
-    b:SetScript("OnDragStart", function(self)
-        if self._bag and self._slot and ns.PickupContainerItem then
-            ns.PickupContainerItem(self._bag, self._slot)
-        end
-    end)
-    -- AnyUp, not the named pair. Every secure button in this suite that
-    -- works on this client registers this way, and the named form left
-    -- the dispatcher silent. One edge, so PostClick fires once per click.
-    b:RegisterForClicks("AnyUp")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     if b.GetPushedTexture and b:GetPushedTexture() then b:GetPushedTexture():SetTexture("") end
     if b.GetNormalTexture and b:GetNormalTexture() then b:GetNormalTexture():SetTexture("") end
     -- Hide Blizzard's overlay textures so our quality border shows through.
@@ -306,9 +296,6 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end
     b:SetID(slot or 0)
-    -- Right-click uses the item, through the secure handler. The bank's
-    -- slots hit the same protected UseContainerItem the bags did.
-    ns.SetSlotUse(b, itemID and bag or nil, itemID and slot or nil)
 
     if itemID and icon then
         b._iconTex:SetTexture(icon)
