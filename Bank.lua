@@ -507,6 +507,10 @@ local function buildPanel()
     local pos = WB.db.bankPos  -- pre-seeded in DB_DEFAULTS; always exists
 
     local panel = CreateFrame("Frame", "WicksBankPanel", UIParent)
+    -- Not listed in UISpecialFrames on purpose. Blizzard's BankFrame stays
+    -- shown behind ours (alpha 0, parked off screen), so Escape reaches it,
+    -- ends the bank session, and its OnHide brings this panel down with it.
+    -- Listing ours would hide the window and leave the session open.
     panel:SetFrameStrata("HIGH")
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)

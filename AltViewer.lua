@@ -615,6 +615,7 @@ end
 -- ============================================================
 local function buildPanel()
     local panel = CreateFrame("Frame", "WicksAltViewerPanel", UIParent)
+    if WickCore.Chrome and WickCore.Chrome.CloseOnEscape then WickCore.Chrome:CloseOnEscape(panel) end
     panel:SetSize(MAX_PANEL_W, 300)
     panel:SetFrameStrata("HIGH")
     panel:SetClampedToScreen(true)

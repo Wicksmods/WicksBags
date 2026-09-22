@@ -601,6 +601,8 @@ local function buildPanel()
     local pos = WB.db.bagPos  -- pre-seeded in DB_DEFAULTS; always exists
 
     local panel = CreateFrame("Frame", "WicksBagsPanel", UIParent)
+    -- Escape closes the bags before it opens the game menu.
+    if WickCore.Chrome and WickCore.Chrome.CloseOnEscape then WickCore.Chrome:CloseOnEscape(panel) end
     local startW = (pos.panelW and pos.panelW > 0) and pos.panelW or MAX_PANEL_W
     panel:SetSize(startW, 200)
     panel:SetFrameStrata("HIGH")

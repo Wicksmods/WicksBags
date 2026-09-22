@@ -1019,6 +1019,7 @@ function OP:Build()
     if self.panel then return self.panel end
 
     local panel = CreateFrame("Frame", "WicksBagsOptions", UIParent)
+    if WickCore.Chrome and WickCore.Chrome.CloseOnEscape then WickCore.Chrome:CloseOnEscape(panel) end
     panel:SetSize(PANEL_W, PANEL_H)
     panel:SetFrameStrata("DIALOG")
     panel:SetMovable(true)
