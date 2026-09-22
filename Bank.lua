@@ -158,7 +158,10 @@ local function buildSlot(parent, index)
             ns.PickupContainerItem(self._bag, self._slot)
         end
     end)
-    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    -- AnyUp, not the named pair. Every secure button in this suite that
+    -- works on this client registers this way, and the named form left
+    -- the dispatcher silent. One edge, so PostClick fires once per click.
+    b:RegisterForClicks("AnyUp")
     if b.GetPushedTexture and b:GetPushedTexture() then b:GetPushedTexture():SetTexture("") end
     if b.GetNormalTexture and b:GetNormalTexture() then b:GetNormalTexture():SetTexture("") end
     -- Hide Blizzard's overlay textures so our quality border shows through.

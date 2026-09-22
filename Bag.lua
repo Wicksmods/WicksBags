@@ -252,8 +252,11 @@ local function buildSlot(parent, index)
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
-    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    b:SetAttribute("_wicksClicks", "LeftButtonUp,RightButtonUp")
+    -- AnyUp, not the named pair. Every secure button in this suite that
+    -- works on this client registers this way, and the named form left
+    -- the dispatcher silent. One edge, so PostClick fires once per click.
+    b:RegisterForClicks("AnyUp")
+    b:SetAttribute("_wicksClicks", "AnyUp")
     -- Hide the template's pushed/normal textures so our quality-border
     -- treatment isn't covered by Blizzard's default frame art.
     if b.GetPushedTexture and b:GetPushedTexture() then
@@ -411,7 +414,7 @@ local function buildSlot(parent, index)
     -- OnMouseUp fires before the template's own right-click menu opens, so
     -- returning here (after showing our menu) lets us suppress Blizzard's
     -- default item context menu by consuming the event first.
-    b:HookScript("OnMouseUp", function(self, button)
+    b:SetScript("OnMouseUp", function(self, button)
         if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
            and self._itemID then
             showCatMenu(self._itemID, self._itemName)
@@ -422,9 +425,13 @@ local function buildSlot(parent, index)
     -- and OnReceiveDrag handlers. Our hooks only fire for FREE-tile cases
     -- where the template's bag/slot dispatch wouldn't have a real target,
     -- or for shift-click to open the category Rules panel.
-    -- HookScript, never SetScript: OnClick belongs to the secure handler
-    -- now, and replacing it would put us back where we started.
-    b:HookScript("OnClick", function(self, button)
+    -- PostClick, never OnClick. Hooking a secure button's OnClick taints
+    -- the handler, and a tainted handler cannot complete the protected
+    -- call inside it: the attributes were right and right-click still did
+    -- nothing. PreClick and PostClick exist so an addon can add to a
+    -- secure button without standing in its way. This runs after the
+    -- secure dispatch, which is what we want for everything here.
+    b:SetScript("PostClick", function(self, button)
         -- Left-click picks the item up. Right-click is the secure
         -- handler's, set through type2/bag/slot, and never comes here.
         -- Picking up is not protected, so this one is ours to do.
