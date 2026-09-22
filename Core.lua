@@ -170,6 +170,11 @@ local A = Core:NewAddon("WicksBags", {
         profile = PROFILE_DEFAULTS,
         global  = { alts = {} },
     },
+    -- The alt inventory snapshot is a cache: it regrows the moment that
+    -- alt logs in. It was forty-eight of the macro store's fifty-four
+    -- macros, and left in it would grow with every alt until it pushed
+    -- the real settings out of the budget.
+    storeExclude = { "global.alts" },
 })
 
 -- ============================================================
