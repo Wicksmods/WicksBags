@@ -147,7 +147,7 @@ local function buildSlot(parent, index)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
     local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBankSlot" .. index, host,
-        "ContainerFrameItemButtonTemplate")
+        ns.SLOT_TEMPLATE)
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
@@ -296,6 +296,9 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
     --   self:GetID() = slot, self:GetParent():GetID() = bag
     if b._host then b._host:SetID(bag or 0) end
     b:SetID(slot or 0)
+    -- Right-click uses the item, through the secure handler. The bank's
+    -- slots hit the same protected UseContainerItem the bags did.
+    ns.SetSlotUse(b, itemID and bag or nil, itemID and slot or nil)
 
     if itemID and icon then
         b._iconTex:SetTexture(icon)

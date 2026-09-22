@@ -88,6 +88,47 @@ local function slotFrameType()
 end
 ns.SLOT_FRAME_TYPE = slotFrameType()
 
+-- ============================================================
+-- Using an item from a slot
+-- ============================================================
+-- UseContainerItem is protected, and a button this addon created carries
+-- this addon's taint, so the template's own OnClick could not complete
+-- it: right-clicking anything in the bags printed "blocked from an
+-- action". Confirmed from a taint log, the whole chain being
+-- ContainerFrameItemButton_OnClick -> BankFrame:GetActiveBankType ->
+-- blocked UseContainerItem.
+--
+-- The way through is the secure button the game provides for exactly
+-- this. type2/bag/slot hand the right-click to SecureActionButton_OnClick,
+-- which runs in the secure environment and uses the item itself. Nothing
+-- of ours is on that path, so there is nothing to taint.
+--
+-- Left-click stays ours: picking an item up is not protected.
+ns.SLOT_TEMPLATE = "ContainerFrameItemButtonTemplate,SecureActionButtonTemplate"
+
+-- Attributes may not be written to a secure button in combat. A slot
+-- whose item changed mid-fight keeps the old pair until it ends, which
+-- is the same rule every action bar lives by.
+function ns.SetSlotUse(button, bag, slot)
+    if not button or not button.SetAttribute then return false end
+    if InCombatLockdown and InCombatLockdown() then
+        button._useStale = true
+        return false
+    end
+    button._useStale = nil
+    if bag and slot then
+        button:SetAttribute("type2", "item")
+        button:SetAttribute("bag", bag)
+        button:SetAttribute("slot", slot)
+    else
+        -- An empty slot or the free-space tile: nothing to use.
+        button:SetAttribute("type2", nil)
+        button:SetAttribute("bag", nil)
+        button:SetAttribute("slot", nil)
+    end
+    return true
+end
+
 -- The icon texture and stack count of a slot button, whichever way the
 -- client keys them (retail parentKey, TBC global name), or our own regions
 -- when the template supplied neither.
@@ -301,6 +342,9 @@ local EVENTS = {
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_CLOSE",
     "PLAYER_LOGOUT",
+    -- A slot whose item changed during a fight could not have its secure
+    -- attributes rewritten, so the pair it carries is stale until now.
+    "PLAYER_REGEN_ENABLED",
 }
 for _, e in ipairs(EVENTS) do
     pcall(f.RegisterEvent, f, e)
@@ -387,6 +431,11 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "MERCHANT_CLOSED" or event == "MAIL_CLOSED"
         or event == "AUCTION_HOUSE_CLOSED" or event == "TRADE_SKILL_CLOSE" then
         autoCloseBag()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Redress every slot so the ones that could not take their secure
+        -- attributes mid-fight get them now.
+        if WB.Bag and WB.Bag.Refresh then WB.Bag:Refresh() end
+        if WB.Bank and WB.Bank.Refresh then WB.Bank:Refresh() end
     elseif event == "PLAYER_LOGOUT" then
         for _, mod in ipairs({ WB.Bag, WB.Bank, WB.AltViewer }) do
             if mod and mod.panel and mod.panel._snapPosition then mod.panel._snapPosition() end
