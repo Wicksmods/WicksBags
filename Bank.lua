@@ -151,6 +151,13 @@ local function buildSlot(parent, index)
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
+    -- Dragging an item out was the container template's job. Picking up
+    -- is not protected, so it is ours now.
+    b:SetScript("OnDragStart", function(self)
+        if self._bag and self._slot and ns.PickupContainerItem then
+            ns.PickupContainerItem(self._bag, self._slot)
+        end
+    end)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     if b.GetPushedTexture and b:GetPushedTexture() then b:GetPushedTexture():SetTexture("") end
     if b.GetNormalTexture and b:GetNormalTexture() then b:GetNormalTexture():SetTexture("") end

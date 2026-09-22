@@ -233,23 +233,27 @@ local slotPool = {}
 local slotInUse = {}
 
 local function buildSlot(parent, index)
-    -- Blizzard's ContainerFrameItemButtonTemplate for the intrinsic
-    -- regions, plus SecureActionButtonTemplate so right-click goes
-    -- through the game's own secure dispatch. Their template's OnClick
-    -- cannot use an item from a button we created: UseContainerItem is
-    -- protected and our taint reaches it. See ns.SetSlotUse.
-    --
-    -- The hidden host still carries the bag id on :GetID(), which the
-    -- template's other machinery reads.
+    -- A plain Button with SecureActionButtonTemplate. Right-click is
+    -- dispatched by Blizzard's own secure handler through type2/bag/slot,
+    -- which is the only way to reach the protected UseContainerItem from
+    -- a button an addon created. Every region is ours. See ns.SetSlotUse.
     local host = CreateFrame("Button", nil, parent)
     host:SetSize(SLOT_SIZE, SLOT_SIZE)
 
     local b = CreateFrame(ns.SLOT_FRAME_TYPE, "WicksBagsSlot" .. index, host,
         ns.SLOT_TEMPLATE)
+    -- Dragging an item out was the container template's job. Picking up
+    -- is not protected, so it is ours now.
+    b:SetScript("OnDragStart", function(self)
+        if self._bag and self._slot and ns.PickupContainerItem then
+            ns.PickupContainerItem(self._bag, self._slot)
+        end
+    end)
     b:SetAllPoints(host)
     b._host = host
     b:RegisterForDrag("LeftButton")
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:SetAttribute("_wicksClicks", "LeftButtonUp,RightButtonUp")
     -- Hide the template's pushed/normal textures so our quality-border
     -- treatment isn't covered by Blizzard's default frame art.
     if b.GetPushedTexture and b:GetPushedTexture() then
@@ -418,6 +422,8 @@ local function buildSlot(parent, index)
     -- and OnReceiveDrag handlers. Our hooks only fire for FREE-tile cases
     -- where the template's bag/slot dispatch wouldn't have a real target,
     -- or for shift-click to open the category Rules panel.
+    -- HookScript, never SetScript: OnClick belongs to the secure handler
+    -- now, and replacing it would put us back where we started.
     b:HookScript("OnClick", function(self, button)
         -- Left-click picks the item up. Right-click is the secure
         -- handler's, set through type2/bag/slot, and never comes here.

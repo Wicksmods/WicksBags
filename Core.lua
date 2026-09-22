@@ -86,7 +86,9 @@ local function slotFrameType()
     end
     return "Button"
 end
-ns.SLOT_FRAME_TYPE = slotFrameType()
+-- Kept for reference: this is what the container template wanted. The
+-- slots no longer use that template, so the answer is no longer used.
+ns.CONTAINER_TEMPLATE_TYPE = slotFrameType()
 
 -- ============================================================
 -- Using an item from a slot
@@ -104,7 +106,20 @@ ns.SLOT_FRAME_TYPE = slotFrameType()
 -- of ours is on that path, so there is nothing to taint.
 --
 -- Left-click stays ours: picking an item up is not protected.
-ns.SLOT_TEMPLATE = "ContainerFrameItemButtonTemplate,SecureActionButtonTemplate"
+-- Inheriting both templates did not work: the client reported the slot's
+-- OnClick set and not equal to SecureActionButton_OnClick, so the
+-- container template's handler won and the attributes below were never
+-- read. Right-click did nothing at all, which was worse than the error
+-- it replaced.
+--
+-- So the container template is gone. A plain Button with only
+-- SecureActionButtonTemplate gets that template's own XML-defined
+-- OnClick, which is secure because Blizzard declared it, not us. We
+-- already draw every region ourselves (icon, count, quality border,
+-- cooldown, item level) and neutered theirs, so nothing is lost but the
+-- handler that could not work.
+ns.SLOT_FRAME_TYPE = "Button"
+ns.SLOT_TEMPLATE = "SecureActionButtonTemplate"
 
 -- Attributes may not be written to a secure button in combat. A slot
 -- whose item changed mid-fight keeps the old pair until it ends, which
@@ -461,6 +476,26 @@ A:RegisterSlash(function(_, input)
         return
     end
     if input == "alts" and WB.AltViewer then WB.AltViewer:Toggle() return end
+    if input == "click" then
+        -- Which OnClick a slot actually ended up with, and what it
+        -- carries. Right-click doing nothing means the secure handler is
+        -- not the one attached, and this says so rather than guessing.
+        local b = _G.WicksBagsSlot1
+        if not b then A:Print("no slot built yet; open the bags first.") return end
+        local script = b:GetScript("OnClick")
+        local secure = rawget(_G, "SecureActionButton_OnClick")
+        A:Print(("slot frame type %s, template %s"):format(tostring(ns.SLOT_FRAME_TYPE), tostring(ns.SLOT_TEMPLATE)))
+        A:Print(("OnClick set: %s   is SecureActionButton_OnClick: %s   that global exists: %s"):format(
+            tostring(script ~= nil), tostring(script ~= nil and secure ~= nil and script == secure), tostring(secure ~= nil)))
+        A:Print(("attributes: type2=%s bag=%s slot=%s   item here: %s"):format(
+            tostring(b:GetAttribute("type2")), tostring(b:GetAttribute("bag")),
+            tostring(b:GetAttribute("slot")), tostring(b._itemID)))
+        A:Print(("registered for right-click: %s"):format(
+            tostring(b.GetAttribute and b:GetAttribute("_wicksClicks") or "unknown")))
+        local pm = b.IsProtected and select(1, b:IsProtected())
+        A:Print(("protected: %s   in combat: %s"):format(tostring(pm), tostring(InCombatLockdown and InCombatLockdown())))
+        return
+    end
     if input == "bank" then
         if WB.Bank and WB.Bank.Diagnose then WB.Bank:Diagnose(function(l) A:Print(l) end) end
         return
