@@ -26,6 +26,7 @@ ns.GetItemCooldown = (C_Item and C_Item.GetItemCooldown)
     or GetItemCooldown
 
 ns.GetContainerNumSlots     = D.GetContainerNumSlots
+ns.GetContainerNumFreeSlots = D.GetContainerNumFreeSlots
 ns.GetContainerItemLink     = D.GetContainerItemLink
 ns.GetContainerItemID       = D.GetContainerItemID
 ns.PickupContainerItem      = D.PickupContainerItem
