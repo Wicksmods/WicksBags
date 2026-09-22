@@ -1318,40 +1318,11 @@ end
 -- default; clicking the tile expands it to real slots so the player can
 -- pick one up. State survives refreshes and resets on panel close.
 
--- family is the bag-family bit a container reports for the bag built to
--- hold this category: quiver or ammo pouch for arrows and shot, soul bag
--- for shards. stack is what one slot holds when the item itself will not
--- say. A reagent pouch has no family bit, so reagents show a plain count.
 local BULK = {
-    ["Soul Shard"] = { label = "Soul Shards",  accent = { 0.31, 0.78, 0.47, 0.6 }, family = 4,     stack = 1,   holder = "soul bag" },
-    ["Projectile"] = { label = "Ammunition",   accent = { 0.62, 0.55, 0.36, 0.6 }, family = 1 + 2, stack = 200, holder = "quiver" },
+    ["Soul Shard"] = { label = "Soul Shards",  accent = { 0.31, 0.78, 0.47, 0.6 } },
+    ["Projectile"] = { label = "Ammunition",   accent = { 0.62, 0.55, 0.36, 0.6 } },
     ["Reagent"]    = { label = "Reagents",     accent = { 0.45, 0.55, 0.72, 0.6 } },
 }
-
--- How much of this the bags built for it can hold: every slot of every
--- equipped bag of the right family, times the stack size. 1768/2000 is a
--- number a hunter reads at a glance; 1768 alone is a number they have to
--- think about. Nothing when no such bag is equipped, so the badge stays a
--- plain count rather than pretending to a limit.
-local function bulkCapacity(cat, items)
-    local def = BULK[cat]
-    if not def or not def.family or not ns.GetContainerNumFreeSlots then return nil end
-    local slots = 0
-    for _, bag in ipairs({ 1, 2, 3, 4 }) do
-        local _, family = ns.GetContainerNumFreeSlots(bag)
-        if type(family) == "number" and family > 0 and bit.band(family, def.family) ~= 0 then
-            slots = slots + (ns.GetContainerNumSlots(bag) or 0)
-        end
-    end
-    if slots == 0 then return nil end
-    local stack = def.stack
-    local first = items[1] and items[1].itemID
-    if first then
-        local _, _, _, _, _, _, _, maxStack = ns.GetItemInfo(first)
-        if type(maxStack) == "number" and maxStack > 0 then stack = maxStack end
-    end
-    return slots * stack, slots
-end
 local expanded = {}   -- category -> true while the player has opened it
 
 local function isBulk(cat) return BULK[cat] ~= nil end
@@ -1412,11 +1383,7 @@ local function getAggTile(parent, index)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:ClearLines()
             GameTooltip:AddLine(def.label or self._cat or "Items", UI.C_GREEN[1], UI.C_GREEN[2], UI.C_GREEN[3])
-            if self._capacity then
-                GameTooltip:AddLine(("%d of the %d your %s holds"):format(self._count or 0, self._capacity, self._holder or "bag"), 1, 1, 1)
-            else
-                GameTooltip:AddLine(("%d in bags"):format(self._count or 0), 1, 1, 1)
-            end
+            GameTooltip:AddLine(("%d in bags"):format(self._count or 0), 1, 1, 1)
             if (self._slots or 0) > 1 then
                 GameTooltip:AddLine(("across %d slots"):format(self._slots), UI.C_TEXT_DIM[1], UI.C_TEXT_DIM[2], UI.C_TEXT_DIM[3])
             end
@@ -2127,21 +2094,9 @@ function BG:Refresh()
                     icon = tex
                 end
                 agg._iconTex:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                -- With a limit to show, show both numbers exactly and let
-                -- the font give way; "1.8k/2k" would defeat the point.
-                local capacity = bulkCapacity(g.parent, blk.items)
-                if capacity then
-                    local text = ("%d/%d"):format(total, capacity)
-                    agg._countTxt:SetFont("Fonts\\ARIALN.TTF", #text > 7 and 9 or (#text > 5 and 11 or 14), "OUTLINE")
-                    agg._countTxt:SetText(text)
-                else
-                    agg._countTxt:SetFont("Fonts\\ARIALN.TTF", 14, "OUTLINE")
-                    agg._countTxt:SetText(total > 999 and ("%.1fk"):format(total / 1000) or tostring(total))
-                end
+                agg._countTxt:SetText(total > 999 and ("%.1fk"):format(total / 1000) or tostring(total))
                 agg._indTxt:SetText("v")
                 agg._cat, agg._count, agg._slots = g.parent, total, slots
-                agg._capacity = capacity
-                agg._holder = BULK[g.parent] and BULK[g.parent].holder
                 local def = BULK[g.parent]
                 if def and agg._setQB then agg._setQB(def.accent) end
             end
