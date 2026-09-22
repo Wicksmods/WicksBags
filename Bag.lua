@@ -550,7 +550,11 @@ local function dressSlot(b, bag, slot, itemID, link, count, quality, icon, locke
             b._ilvlText:SetText("")
         end
         -- Cooldown
-        local start, dur = ns.GetItemCooldown and ns.GetItemCooldown(itemID)
+        -- Split for the same reason as the repair cost: guarding inline with
+        -- `and` drops every return but the first, so dur was always nil and
+        -- the swirl never drew.
+        local start, dur
+        if ns.GetItemCooldown then start, dur = ns.GetItemCooldown(itemID) end
         if start and start > 0 and dur and dur > 1.5 then
             b._cd:SetCooldown(start, dur)
             b._cd:Show()
