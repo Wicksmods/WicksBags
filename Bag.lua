@@ -330,6 +330,13 @@ local function buildSlot(parent, index)
     cd:SetAllPoints(b)
     cd:SetDrawEdge(false)
     cd:SetSwipeColor(0, 0, 0, 0.7)
+    -- It covers the whole button, so it must not take the click meant for
+    -- what is underneath. This never mattered before: the swirl was never
+    -- drawn, because the duration was read through an `and` that dropped
+    -- it, so the frame was always hidden and could not swallow anything.
+    cd:EnableMouse(false)
+    if cd.SetMouseClickEnabled then cd:SetMouseClickEnabled(false) end
+    if cd.SetMouseMotionEnabled then cd:SetMouseMotionEnabled(false) end
     b._cd = cd
 
     -- Item-level overlay (top-left corner; equipment only)
@@ -418,6 +425,16 @@ local function buildSlot(parent, index)
     -- where the template's bag/slot dispatch wouldn't have a real target,
     -- or for shift-click to open the category Rules panel.
     b:HookScript("OnClick", function(self, button)
+        -- With /wbags clicks on, say that the click reached the button at
+        -- all. A right-click that does nothing is either a click that never
+        -- arrived, because something is sitting on top of the button, or one
+        -- that arrived and had its UseContainerItem blocked. Those want
+        -- opposite fixes and look identical from the outside.
+        if WB.clickDebug then
+            print(("|cff4FC778Wick's Bags|r: %s reached bag %s slot %s, item %s"):format(
+                tostring(button), tostring(self._bag), tostring(self._slot),
+                tostring(self._itemID)))
+        end
         -- Shift + left-click: open the Rules panel pre-filled for this item.
         -- The template already picked up the item at this point, so we
         -- immediately clear the cursor and open the panel instead.

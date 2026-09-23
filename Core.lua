@@ -427,6 +427,12 @@ A:RegisterSlash(function(_, input)
             o.hideDefaultBank == false and "left alone (shown)" or "hidden by us"))
         return
     end
+    if input == "clicks" then
+        WB.clickDebug = not WB.clickDebug
+        A:Print(("click reporting %s. Right-click an item: a line means the click reached the button, silence means something is sitting on top of it."):format(
+            WB.clickDebug and "on" or "off"))
+        return
+    end
     if input == "bank" then
         if WB.Bank and WB.Bank.Diagnose then WB.Bank:Diagnose(function(l) A:Print(l) end) end
         return
@@ -438,6 +444,7 @@ A:RegisterSlash(function(_, input)
     if input == "help" or input == "?" then
         A:Print("commands")
         print("  /wbags                 toggle the panel")
+        print("  /wbags clicks          report whether a click reaches an item button")
         print("  /wbags defaultbank     show or hide Blizzard's own bank window")
         print("  /wbags show | hide     show or hide")
         print("  /wbags options         open options")
