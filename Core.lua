@@ -9,7 +9,32 @@
 local ADDON, ns = ...
 
 local Core = WickCore
-assert(Core, "Wick's Bags requires WickCore. Enable the WickCore addon.")
+if not Core then
+    -- WickCore is missing or switched off.
+    --
+    -- The TOC asks for it with OptionalDeps rather than Dependencies on
+    -- purpose. A hard dependency makes the client refuse to load this addon
+    -- at all, so nothing of ours runs and the player is told nothing beyond
+    -- a greyed line in the AddOns list. Loading anyway lets us say what is
+    -- wrong and where to get it.
+    --
+    -- One line for the lot of them, not one per addon: with the whole suite
+    -- installed and WickCore switched off, a line each would be a wall.
+    local need = _G.WicksNeedCore
+    if not need then
+        need = {}
+        _G.WicksNeedCore = need
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_LOGIN")
+        f:SetScript("OnEvent", function()
+            table.sort(need)
+            print(("|cff4FC778Wick's Mods|r: %s %s WickCore, which is not installed or not switched on. It is in the same download as the rest of the suite: |cffD4C8A1wicksmods.com|r")
+                :format(table.concat(need, ", "), #need == 1 and "needs" or "need"))
+        end)
+    end
+    need[#need + 1] = "Wick's Bags"
+    return
+end
 local D = Core.Dialect
 
 -- ============================================================

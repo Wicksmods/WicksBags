@@ -4,6 +4,7 @@
 -- fires. Same brand chrome, same masonry layout, same Categories resolver.
 
 local ADDON, ns = ...
+if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 local UI = WB.UI
 local CT = WB.Categories

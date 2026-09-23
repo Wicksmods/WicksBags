@@ -3,7 +3,7 @@
 ## Notes: Categorized bags and bank for World of Warcraft: Forever. Auto-categorize, search, one-click sort, alt inventory and tooltips, custom rules.
 ## Author: Wick
 ## Version: 1.0.0
-## Dependencies: WickCore
+## OptionalDeps: WickCore
 ## SavedVariables: WicksBagsDB, WicksBagsAlts
 ## X-Website: https://wicksmods.com
 ## X-WickCore: WickCore-1.0

@@ -4,6 +4,7 @@
 --   Tab 2 — Rules: custom category assignment (by item, class/subclass, name pattern).
 
 local ADDON, ns = ...
+if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 local UI = WB.UI
 

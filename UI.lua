@@ -6,6 +6,7 @@
 -- tint, the two-part title and coin formatting.
 
 local ADDON, ns = ...
+if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 local Chrome = WickCore.Chrome
 local C = Chrome.Colors

@@ -11,6 +11,7 @@
 -- and right-click container actions are deferred to v0.2.
 
 local ADDON, ns = ...
+if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 local UI = WB.UI
 local CT = WB.Categories

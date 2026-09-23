@@ -15,6 +15,7 @@
 --   WB.Categories:RegisterSource("foo", { GetCategoryFor = ..., ... })
 
 local ADDON, ns = ...
+if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 
 WB.Categories = {}
