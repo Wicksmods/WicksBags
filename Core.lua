@@ -189,7 +189,7 @@ local PROFILE_DEFAULTS = {
 
 local A = Core:NewAddon("WicksBags", {
     title    = "Wick's Bags",
-    version  = "1.0.0",
+    version  = "0.9.0",
     savedVar = "WicksBagsDB",
     defaults = {
         profile = PROFILE_DEFAULTS,
