@@ -11,6 +11,7 @@ if not WickCore then return end   -- said once in Core.lua
 local WB = WicksBags
 local UI = WB.UI
 local CT = WB.Categories
+local Chrome = WickCore.Chrome
 
 WB.AltViewer = {}
 local AV = WB.AltViewer
@@ -33,8 +34,8 @@ local MIN_PANEL_W      = 600
 local MAX_PANEL_W      = 960
 
 -- Bank section visual treatment: muted green wash + green borders on containers
-local C_BANK_WASH    = { 0.310, 0.780, 0.471, 0.06 }
-local C_BANK_BORDER  = { 0.310, 0.780, 0.471, 0.35 }
+local C_BANK_WASH    = Chrome:Wash("fel", 0.06)
+local C_BANK_BORDER  = Chrome:Wash("fel", 0.35)
 
 local function formatGold(copper)
     if not copper or copper <= 0 then return "" end
